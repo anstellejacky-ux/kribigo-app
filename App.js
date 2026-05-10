@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { persistLogin, loadSession, logout } from './src/services/auth';
+import { connectSocket, joinAsRider, joinAsDriver, onNewRideRequest, offNewRideRequest, getSocket } from './src/services/socket';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
   ActivityIndicator, Alert, ScrollView, Modal
 } from 'react-native';
+
 
 const API = 'https://kribigo-backend.onrender.com/api/v1';
 
@@ -340,12 +343,50 @@ function RoleSelector({phone, lang, onSelect}){
 
 // ─── MAIN APP ──────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen] = useState('login');
+  const [screen, setScreen] = useState('loading');
+  const [savedPhone, setSavedPhone] = useState('');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [lang, setLang] = useState('fr');
   const [userRole, setUserRole] = useState(null);
+  const [token, setToken] = useState(null);
+
+  useEffect(() => {
+    loadSession().then(session => {
+      if (session) {
+        setPhone(session.phone);
+        setUserRole(session.role);
+        setScreen('home');
+      } else {
+        setScreen('login');
+      }
+    });
+  }, []);
+
+  const handleRoleSelect = async (r) => {
+    await persistLogin(token, phone, r);
+    setUserRole(r);
+    setScreen('home');
+  };
+
+  // Listen for incoming ride requests (driver mode)
+  useEffect(() => {
+    if (userRole !== 'driver') return;
+    const s = connectSocket();
+    onNewRideRequest((tripData) => {
+      console.log('🚗 New ride request:', tripData);
+      setLiveRequest(tripData);
+    });
+    return () => offNewRideRequest();
+  }, [userRole]);
+
+  const handleLogout = async () => {
+    await logout();
+    setScreen('login');
+    setUserRole(null);
+    setPhone('');
+  };
 
   const [rideMode, setRideMode] = useState('now');
   const [destination, setDestination] = useState('');
@@ -388,7 +429,7 @@ export default function App() {
     try {
       const res = await fetch(`${API}/auth/user/verify-otp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,code:otp})});
       const data = await res.json();
-      if(res.ok)setScreen('role');
+      if(res.ok){ setToken(data.access_token); setScreen('role'); }
       else Alert.alert('Erreur',data.error||'Code invalide');
     } catch {Alert.alert('Erreur','Serveur inaccessible');}
     finally{setLoading(false);}
@@ -412,6 +453,13 @@ export default function App() {
           <Text style={[s.langText,lang===l&&s.langTextActive]}>{l.toUpperCase()}</Text>
         </TouchableOpacity>
       ))}
+    </View>
+  );
+
+  if(screen==='loading') return(
+    <View style={[s.container,{justifyContent:'center',alignItems:'center'}]}>
+      <Text style={s.logo}>Kribi<Text style={s.logoOrange}>Go</Text></Text>
+      <ActivityIndicator color="#fff" style={{marginTop:20}}/>
     </View>
   );
 
@@ -455,7 +503,7 @@ export default function App() {
     </KeyboardAvoidingView>
   );
 
-  if(screen==='role') return <RoleSelector phone={phone} lang={lang} onSelect={(r)=>{setUserRole(r);setScreen('home');}}/>;
+  if(screen==='role') return <RoleSelector phone={phone} lang={lang} onSelect={handleRoleSelect}/>;
 
   if(userRole==='driver') return <DriverHome phone={phone} lang={lang} onSwitchRole={()=>setUserRole('rider')}/>;
 
