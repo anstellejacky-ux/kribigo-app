@@ -790,10 +790,7 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* TEMP: test rating */}
-      <TouchableOpacity onPress={()=>{setShowRating(true);setBookedRide({vehicle:VEHICLES[0],destination:'Test',fare:1950,vehicle_type:'moto'});setDriverInfo({name:'Test Driver',rating:'4.9',eta_minutes:5});}} style={{position:'absolute',top:120,right:16,zIndex:99,backgroundColor:'rgba(255,255,255,0.2)',borderRadius:20,padding:8}}>
-        <Text style={{color:'#fff',fontSize:12,fontWeight:'700'}}>⭐ Test Rating</Text>
-      </TouchableOpacity>
+
       <View style={s.homeHeader}>
         <View>
           <Text style={s.homeGreeting}>{fr?'Bonjour 👋':'Hello 👋'}</Text>
