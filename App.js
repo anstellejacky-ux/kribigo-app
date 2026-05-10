@@ -300,8 +300,62 @@ function DriverHome({phone, lang, onSwitchRole}){
           <Text style={dr.weekTotal}>{fr ? 'Total: 54 200 XAF' : 'Total: 54,200 XAF'}</Text>
         </View>
 
+        {/* Simulate complete button for testing */}
+        {tripStatus === 'arriving' && (
+          <TouchableOpacity 
+            style={[s.newRideBtn, {backgroundColor:'rgba(255,255,255,0.15)', marginHorizontal:16}]} 
+            onPress={() => { setTripStatus('completed'); setShowRating(true); }}>
+            <Text style={s.newRideBtnText}>✅ {fr ? 'Simuler fin de course' : 'Simulate trip end'}</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={{height:40}}/>
       </ScrollView>
+
+      {/* Rating Modal */}
+      <Modal visible={showRating} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={rt.modal}>
+            <Text style={rt.title}>{fr ? 'Notez votre chauffeur' : 'Rate your driver'}</Text>
+            <View style={rt.driverRow}>
+              <View style={rt.avatar}><Text style={{fontSize:32}}>👨‍✈️</Text></View>
+              <View>
+                <Text style={rt.driverName}>{driverInfo?.name || 'Chauffeur KribiGo'}</Text>
+                <Text style={rt.driverSub}>{bookedRide?.vehicle?.icon} {fr ? bookedRide?.vehicle?.label_fr : bookedRide?.vehicle?.label_en}</Text>
+              </View>
+            </View>
+
+            <Text style={rt.starsLabel}>{fr ? 'Comment était votre course ?' : 'How was your ride?'}</Text>
+            <View style={rt.starsRow}>
+              {[1,2,3,4,5].map(star => (
+                <TouchableOpacity key={star} onPress={() => setUserRating(star)} style={rt.starBtn}>
+                  <Text style={[rt.star, userRating >= star && rt.starActive]}>{userRating >= star ? '⭐' : '☆'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={rt.ratingLabel}>
+              {userRating === 0 ? '' : userRating === 1 ? (fr ? 'Très mauvais' : 'Very bad') : userRating === 2 ? (fr ? 'Mauvais' : 'Bad') : userRating === 3 ? (fr ? 'Correct' : 'OK') : userRating === 4 ? (fr ? 'Bien' : 'Good') : (fr ? 'Excellent !' : 'Excellent!')}
+            </Text>
+
+            <TextInput
+              style={rt.comment}
+              placeholder={fr ? 'Ajouter un commentaire (optionnel)...' : 'Add a comment (optional)...'}
+              placeholderTextColor="#999"
+              value={ratingComment}
+              onChangeText={setRatingComment}
+              multiline
+              numberOfLines={3}
+            />
+
+            <TouchableOpacity style={[rt.submitBtn, userRating === 0 && rt.submitBtnOff]} onPress={submitRating} disabled={userRating === 0}>
+              <Text style={rt.submitBtnText}>{fr ? 'Envoyer ma note' : 'Submit rating'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={rt.skipBtn} onPress={() => { setShowRating(false); newRide(); setTripStatus('searching'); setDriverInfo(null); }}>
+              <Text style={rt.skipBtnText}>{fr ? 'Passer' : 'Skip'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -379,6 +433,10 @@ export default function App() {
       setTripStatus('arriving');
       setDriverInfo({ eta_minutes, ...driver });
     });
+    s.on('trip:completed', () => {
+      setTripStatus('completed');
+      setTimeout(() => setShowRating(true), 1000);
+    });
     return () => s.off('trip:driver_en_route');
   }, [userRole]);
 
@@ -416,6 +474,10 @@ export default function App() {
   const [bookedRide, setBookedRide] = useState(null);
   const [tripStatus, setTripStatus] = useState('searching'); // searching | accepted | arriving | in_progress | completed
   const [driverInfo, setDriverInfo] = useState(null);
+  const [showRating, setShowRating] = useState(false);
+  const [userRating, setUserRating] = useState(0);
+  const [ratingComment, setRatingComment] = useState('');
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
   const fr = lang === 'fr';
   const schedHour = schedTime ? parseInt(schedTime.split(':')[0]) : null;
@@ -447,6 +509,14 @@ export default function App() {
       else Alert.alert('Erreur',data.error||'Code invalide');
     } catch {Alert.alert('Erreur','Serveur inaccessible');}
     finally{setLoading(false);}
+  };
+
+  const submitRating = async () => {
+    if (userRating === 0) { Alert.alert(fr ? 'Erreur' : 'Error', fr ? 'Veuillez choisir une note' : 'Please select a rating'); return; }
+    setRatingSubmitted(true);
+    setShowRating(false);
+    Alert.alert(fr ? '⭐ Merci !' : '⭐ Thank you!', fr ? 'Votre avis a été envoyé au chauffeur' : 'Your rating has been sent to the driver');
+    setTimeout(() => { newRide(); setTripStatus('searching'); setDriverInfo(null); setUserRating(0); setRatingComment(''); setRatingSubmitted(false); }, 1500);
   };
 
   const confirmBooking = () => {
@@ -539,10 +609,17 @@ export default function App() {
           </View>
         )}
         {tripStatus === 'arriving' && (
-          <View style={[tk.statusCard, tk.statusCardGreen]}>
-            <Text style={tk.statusIcon}>🚗</Text>
-            <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'Chauffeur trouvé !' : 'Driver found!'}</Text>
-            <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'En route vers vous' : 'On the way to you'}</Text>
+          <View>
+            <View style={[tk.statusCard, tk.statusCardGreen]}>
+              <Text style={tk.statusIcon}>🚗</Text>
+              <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'Chauffeur trouvé !' : 'Driver found!'}</Text>
+              <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'En route vers vous' : 'On the way to you'}</Text>
+            </View>
+            <TouchableOpacity
+              style={{backgroundColor:'rgba(255,255,255,0.15)',margin:16,borderRadius:16,padding:16,alignItems:'center',borderWidth:1.5,borderColor:'rgba(255,255,255,0.3)'}}
+              onPress={() => { setTripStatus('completed'); setShowRating(true); }}>
+              <Text style={{color:'#fff',fontWeight:'800',fontSize:15}}>✅ {fr ? 'Simuler fin de course' : 'Simulate trip end'}</Text>
+            </TouchableOpacity>
           </View>
         )}
         {tripStatus === 'in_progress' && (
@@ -604,15 +681,64 @@ export default function App() {
           {bookedRide.night&&<View style={s.nightBadge}><Text style={s.nightBadgeText}>🌙 {fr?'Tarif nuit':'Night rate'}</Text></View>}
         </View>
         {tripStatus==='completed'?(
-          <TouchableOpacity style={s.newRideBtn} onPress={()=>{newRide();setTripStatus('searching');setDriverInfo(null);}}>
-            <Text style={s.newRideBtnText}>{fr?'+ Nouvelle course':'+ New ride'}</Text>
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity style={s.newRideBtn} onPress={()=>setShowRating(true)}>
+              <Text style={s.newRideBtnText}>⭐ {fr?'Noter le chauffeur':'Rate driver'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.newRideBtn,{marginTop:8,backgroundColor:'rgba(255,255,255,0.1)'}]} onPress={()=>{newRide();setTripStatus('searching');setDriverInfo(null);}}>
+              <Text style={s.newRideBtnText}>{fr?'+ Nouvelle course':'+ New ride'}</Text>
+            </TouchableOpacity>
+          </View>
         ):tripStatus==='searching'?(
           <TouchableOpacity style={[s.newRideBtn,{backgroundColor:'rgba(255,255,255,0.1)'}]} onPress={()=>{newRide();setTripStatus('searching');}}>
             <Text style={s.newRideBtnText}>{fr?'Annuler':'Cancel'}</Text>
           </TouchableOpacity>
         ):null}
         <View style={{height:40}}/>
+      </ScrollView>
+    </View>
+  );
+
+  // Rating modal at app level
+  if (showRating) return (
+    <View style={s.container}>
+      <ScrollView contentContainerStyle={{flexGrow:1, justifyContent:'center', padding:24}}>
+        <View style={rt.modal}>
+          <Text style={rt.title}>{fr ? 'Notez votre chauffeur' : 'Rate your driver'}</Text>
+          <View style={rt.driverRow}>
+            <View style={rt.avatar}><Text style={{fontSize:32}}>👨‍✈️</Text></View>
+            <View>
+              <Text style={rt.driverName}>{driverInfo?.name || 'Chauffeur KribiGo'}</Text>
+              <Text style={rt.driverSub}>{bookedRide?.vehicle?.icon} {fr ? bookedRide?.vehicle?.label_fr : bookedRide?.vehicle?.label_en}</Text>
+            </View>
+          </View>
+          <Text style={rt.starsLabel}>{fr ? 'Comment était votre course ?' : 'How was your ride?'}</Text>
+          <View style={rt.starsRow}>
+            {[1,2,3,4,5].map(star => (
+              <TouchableOpacity key={star} onPress={() => setUserRating(star)} style={rt.starBtn}>
+                <Text style={[rt.star, userRating >= star && rt.starActive]}>{userRating >= star ? '⭐' : '☆'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={rt.ratingLabel}>
+            {userRating === 0 ? '' : userRating === 1 ? (fr?'Très mauvais':'Very bad') : userRating === 2 ? (fr?'Mauvais':'Bad') : userRating === 3 ? (fr?'Correct':'OK') : userRating === 4 ? (fr?'Bien':'Good') : (fr?'Excellent !':'Excellent!')}
+          </Text>
+          <TextInput
+            style={rt.comment}
+            placeholder={fr ? "Ajouter un commentaire (optionnel)..." : "Add a comment (optional)..."}
+            placeholderTextColor="#999"
+            value={ratingComment}
+            onChangeText={setRatingComment}
+            multiline
+            numberOfLines={3}
+          />
+          <TouchableOpacity style={[rt.submitBtn, userRating===0 && rt.submitBtnOff]} onPress={submitRating} disabled={userRating===0}>
+            <Text style={rt.submitBtnText}>{fr ? 'Envoyer ma note' : 'Submit rating'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={rt.skipBtn} onPress={() => { setShowRating(false); newRide(); setTripStatus('searching'); setDriverInfo(null); }}>
+            <Text style={rt.skipBtnText}>{fr ? 'Passer' : 'Skip'}</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -664,6 +790,10 @@ export default function App() {
         </View>
       </Modal>
 
+      {/* TEMP: test rating */}
+      <TouchableOpacity onPress={()=>{setShowRating(true);setBookedRide({vehicle:VEHICLES[0],destination:'Test',fare:1950,vehicle_type:'moto'});setDriverInfo({name:'Test Driver',rating:'4.9',eta_minutes:5});}} style={{position:'absolute',top:120,right:16,zIndex:99,backgroundColor:'rgba(255,255,255,0.2)',borderRadius:20,padding:8}}>
+        <Text style={{color:'#fff',fontSize:12,fontWeight:'700'}}>⭐ Test Rating</Text>
+      </TouchableOpacity>
       <View style={s.homeHeader}>
         <View>
           <Text style={s.homeGreeting}>{fr?'Bonjour 👋':'Hello 👋'}</Text>
@@ -792,6 +922,28 @@ export default function App() {
 }
 
 const GREEN='#1B6B4A', ORANGE='#F4A827';
+
+
+const rt = StyleSheet.create({
+  modal:{backgroundColor:'#fff',borderTopLeftRadius:28,borderTopRightRadius:28,padding:28},
+  title:{fontSize:22,fontWeight:'900',color:'#1B6B4A',marginBottom:20,textAlign:'center'},
+  driverRow:{flexDirection:'row',alignItems:'center',backgroundColor:'#F5F6FA',borderRadius:16,padding:16,marginBottom:20},
+  avatar:{width:52,height:52,borderRadius:26,backgroundColor:'#E8F5E9',alignItems:'center',justifyContent:'center',marginRight:14},
+  driverName:{fontSize:16,fontWeight:'800',color:'#333'},
+  driverSub:{fontSize:13,color:'#888',marginTop:2},
+  starsLabel:{fontSize:15,fontWeight:'700',color:'#333',textAlign:'center',marginBottom:12},
+  starsRow:{flexDirection:'row',justifyContent:'center',marginBottom:8},
+  starBtn:{padding:8},
+  star:{fontSize:36,color:'#ddd'},
+  starActive:{color:'#F4A827'},
+  ratingLabel:{fontSize:14,fontWeight:'700',color:'#F4A827',textAlign:'center',marginBottom:16,height:20},
+  comment:{backgroundColor:'#F5F5F5',borderRadius:12,padding:14,fontSize:15,color:'#222',marginBottom:16,minHeight:80,textAlignVertical:'top'},
+  submitBtn:{backgroundColor:'#1B6B4A',borderRadius:14,padding:18,alignItems:'center',marginBottom:8,shadowColor:'#1B6B4A',shadowOpacity:0.3,shadowRadius:8,elevation:4},
+  submitBtnOff:{opacity:0.4},
+  submitBtnText:{color:'#fff',fontWeight:'800',fontSize:16},
+  skipBtn:{padding:14,alignItems:'center'},
+  skipBtnText:{color:'#888',fontWeight:'600',fontSize:14},
+});
 
 const tk = StyleSheet.create({
   statusCard:{backgroundColor:'#fff',marginHorizontal:16,marginTop:16,borderRadius:20,padding:24,alignItems:'center',shadowColor:'#000',shadowOpacity:0.08,shadowRadius:12,elevation:4},
