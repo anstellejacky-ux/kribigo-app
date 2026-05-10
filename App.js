@@ -301,61 +301,9 @@ function DriverHome({phone, lang, onSwitchRole}){
         </View>
 
         {/* Simulate complete button for testing */}
-        {tripStatus === 'arriving' && (
-          <TouchableOpacity 
-            style={[s.newRideBtn, {backgroundColor:'rgba(255,255,255,0.15)', marginHorizontal:16}]} 
-            onPress={() => { setTripStatus('completed'); setShowRating(true); }}>
-            <Text style={s.newRideBtnText}>✅ {fr ? 'Simuler fin de course' : 'Simulate trip end'}</Text>
-          </TouchableOpacity>
-        )}
 
         <View style={{height:40}}/>
       </ScrollView>
-
-      {/* Rating Modal */}
-      <Modal visible={showRating} transparent animationType="slide">
-        <View style={s.modalOverlay}>
-          <View style={rt.modal}>
-            <Text style={rt.title}>{fr ? 'Notez votre chauffeur' : 'Rate your driver'}</Text>
-            <View style={rt.driverRow}>
-              <View style={rt.avatar}><Text style={{fontSize:32}}>👨‍✈️</Text></View>
-              <View>
-                <Text style={rt.driverName}>{driverInfo?.name || 'Chauffeur KribiGo'}</Text>
-                <Text style={rt.driverSub}>{bookedRide?.vehicle?.icon} {fr ? bookedRide?.vehicle?.label_fr : bookedRide?.vehicle?.label_en}</Text>
-              </View>
-            </View>
-
-            <Text style={rt.starsLabel}>{fr ? 'Comment était votre course ?' : 'How was your ride?'}</Text>
-            <View style={rt.starsRow}>
-              {[1,2,3,4,5].map(star => (
-                <TouchableOpacity key={star} onPress={() => setUserRating(star)} style={rt.starBtn}>
-                  <Text style={[rt.star, userRating >= star && rt.starActive]}>{userRating >= star ? '⭐' : '☆'}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Text style={rt.ratingLabel}>
-              {userRating === 0 ? '' : userRating === 1 ? (fr ? 'Très mauvais' : 'Very bad') : userRating === 2 ? (fr ? 'Mauvais' : 'Bad') : userRating === 3 ? (fr ? 'Correct' : 'OK') : userRating === 4 ? (fr ? 'Bien' : 'Good') : (fr ? 'Excellent !' : 'Excellent!')}
-            </Text>
-
-            <TextInput
-              style={rt.comment}
-              placeholder={fr ? 'Ajouter un commentaire (optionnel)...' : 'Add a comment (optional)...'}
-              placeholderTextColor="#999"
-              value={ratingComment}
-              onChangeText={setRatingComment}
-              multiline
-              numberOfLines={3}
-            />
-
-            <TouchableOpacity style={[rt.submitBtn, userRating === 0 && rt.submitBtnOff]} onPress={submitRating} disabled={userRating === 0}>
-              <Text style={rt.submitBtnText}>{fr ? 'Envoyer ma note' : 'Submit rating'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={rt.skipBtn} onPress={() => { setShowRating(false); newRide(); setTripStatus('searching'); setDriverInfo(null); }}>
-              <Text style={rt.skipBtnText}>{fr ? 'Passer' : 'Skip'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -405,6 +353,8 @@ export default function App() {
   const [lang, setLang] = useState('fr');
   const [userRole, setUserRole] = useState(null);
   const [token, setToken] = useState(null);
+  const [activeTab, setActiveTab] = useState('home');
+  const [tripHistory, setTripHistory] = useState([]);
 
   useEffect(() => {
     loadSession().then(session => {
@@ -517,6 +467,17 @@ export default function App() {
     setShowRating(false);
     Alert.alert(fr ? '⭐ Merci !' : '⭐ Thank you!', fr ? 'Votre avis a été envoyé au chauffeur' : 'Your rating has been sent to the driver');
     setTimeout(() => { newRide(); setTripStatus('searching'); setDriverInfo(null); setUserRating(0); setRatingComment(''); setRatingSubmitted(false); }, 1500);
+  };
+
+  const loadHistory = async () => {
+    try {
+      const t = token;
+      const res = await fetch('https://kribigo-backend.onrender.com/api/v1/trips/history', {
+        headers: { 'Authorization': 'Bearer ' + t }
+      });
+      const data = await res.json();
+      if (Array.isArray(data)) setTripHistory(data);
+    } catch(e) { console.log('History error:', e.message); }
   };
 
   const confirmBooking = () => {
@@ -912,14 +873,141 @@ export default function App() {
         <TouchableOpacity style={[s.bookBtn,!canBookScheduled&&s.bookBtnOff]} disabled={!canBookScheduled} onPress={()=>setShowConfirm(true)}>
           <Text style={s.bookBtnText}>{rideMode==='later'?(fr?`📅 Planifier • ${fare.toLocaleString()} XAF`:`📅 Schedule • ${fare.toLocaleString()} XAF`):(fr?`Commander • ${fare.toLocaleString()} XAF`:`Book • ${fare.toLocaleString()} XAF`)}</Text>
         </TouchableOpacity>
-        <View style={{height:50}}/>
+        <View style={{height:80}}/>
       </ScrollView>
+
+      {/* Bottom Tab Bar */}
+      <View style={tab.bar}>
+        <TouchableOpacity style={tab.btn} onPress={() => setActiveTab('home')}>
+          <Text style={[tab.icon, activeTab==='home' && tab.iconActive]}>🏠</Text>
+          <Text style={[tab.label, activeTab==='home' && tab.labelActive]}>{fr ? 'Accueil' : 'Home'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={tab.btn} onPress={() => { setActiveTab('history'); loadHistory(); }}>
+          <Text style={[tab.icon, activeTab==='history' && tab.iconActive]}>📋</Text>
+          <Text style={[tab.label, activeTab==='history' && tab.labelActive]}>{fr ? 'Courses' : 'Trips'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={tab.btn} onPress={() => setActiveTab('profile')}>
+          <Text style={[tab.icon, activeTab==='profile' && tab.iconActive]}>👤</Text>
+          <Text style={[tab.label, activeTab==='profile' && tab.labelActive]}>{fr ? 'Profil' : 'Profile'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* History Tab */}
+      {activeTab === 'history' && (
+        <TouchableOpacity activeOpacity={1} style={tab.overlay} onPress={() => setActiveTab('home')}>
+          <View style={tab.sheet}>
+            <View style={tab.sheetHandle}/>
+            <Text style={tab.sheetTitle}>{fr ? 'Mes courses' : 'My trips'}</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {tripHistory.length === 0 ? (
+                <View style={tab.empty}>
+                  <Text style={tab.emptyIcon}>🚗</Text>
+                  <Text style={tab.emptyText}>{fr ? "Aucune course pour l'instant" : 'No trips yet'}</Text>
+                </View>
+              ) : tripHistory.map((trip, i) => (
+                <View key={trip.id} style={tab.tripCard}>
+                  <View style={tab.tripLeft}>
+                    <Text style={tab.tripIcon}>
+                      {trip.vehicle_type === 'moto' ? '🏍️' : trip.vehicle_type === 'economie' ? '🚗' : '❄️'}
+                    </Text>
+                  </View>
+                  <View style={tab.tripInfo}>
+                    <Text style={tab.tripDest} numberOfLines={1}>{trip.dest_address}</Text>
+                    <Text style={tab.tripDate}>{new Date(trip.requested_at).toLocaleDateString('fr-FR', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</Text>
+                    <View style={[tab.tripStatus, {backgroundColor: trip.status==='completed'?'#E8F5E9':trip.status==='cancelled'?'#FFEBEE':'#FFF8E1'}]}>
+                      <Text style={[tab.tripStatusText, {color: trip.status==='completed'?'#2E7D32':trip.status==='cancelled'?'#C62828':'#F57F17'}]}>
+                        {trip.status==='completed'?(fr?'Terminée':'Completed'):trip.status==='cancelled'?(fr?'Annulée':'Cancelled'):(fr?'En cours':'In progress')}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={tab.tripFare}>
+                    <Text style={tab.tripFareText}>{(trip.final_fare||trip.estimated_fare||0).toLocaleString()}</Text>
+                    <Text style={tab.tripFareCur}>XAF</Text>
+                  </View>
+                </View>
+              ))}
+              <View style={{height:40}}/>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Profile Tab */}
+      {activeTab === 'profile' && (
+        <TouchableOpacity activeOpacity={1} style={tab.overlay} onPress={() => setActiveTab('home')}>
+          <View style={tab.sheet}>
+            <View style={tab.sheetHandle}/>
+            <Text style={tab.sheetTitle}>{fr ? 'Mon profil' : 'My profile'}</Text>
+            <View style={tab.profileCard}>
+              <View style={tab.profileAvatar}><Text style={{fontSize:40}}>👤</Text></View>
+              <Text style={tab.profilePhone}>+237 {phone}</Text>
+              <Text style={tab.profileSub}>{fr ? 'Membre KribiGo' : 'KribiGo member'}</Text>
+            </View>
+            <View style={tab.profileStats}>
+              <View style={tab.profileStat}>
+                <Text style={tab.profileStatNum}>{tripHistory.filter(t=>t.status==='completed').length}</Text>
+                <Text style={tab.profileStatLabel}>{fr?'Courses':'Trips'}</Text>
+              </View>
+              <View style={tab.profileStat}>
+                <Text style={tab.profileStatNum}>⭐ 5.0</Text>
+                <Text style={tab.profileStatLabel}>{fr?'Note':'Rating'}</Text>
+              </View>
+              <View style={tab.profileStat}>
+                <Text style={tab.profileStatNum}>{Math.max(0, 10 - (tripHistory.filter(t=>t.status==='completed').length % 10))}</Text>
+                <Text style={tab.profileStatLabel}>{fr?'→ Gratuite':'→ Free'}</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={tab.logoutBtn} onPress={handleLogout}>
+              <Text style={tab.logoutBtnText}>{fr ? '🚪 Se déconnecter' : '🚪 Log out'}</Text>
+            </TouchableOpacity>
+            <View style={{height:40}}/>
+          </View>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
 const GREEN='#1B6B4A', ORANGE='#F4A827';
 
+
+
+const tab = StyleSheet.create({
+  bar:{flexDirection:'row',backgroundColor:'#fff',borderTopWidth:1,borderTopColor:'#E0E0E0',paddingBottom:20,paddingTop:10,position:'absolute',bottom:0,left:0,right:0},
+  btn:{flex:1,alignItems:'center'},
+  icon:{fontSize:22},
+  iconActive:{},
+  label:{fontSize:11,color:'#999',marginTop:2},
+  labelActive:{color:'#1B6B4A',fontWeight:'700'},
+  overlay:{position:'absolute',top:0,left:0,right:0,bottom:0,backgroundColor:'rgba(0,0,0,0.5)',zIndex:50,justifyContent:'flex-end'},
+  sheet:{backgroundColor:'#fff',borderTopLeftRadius:28,borderTopRightRadius:28,padding:24,maxHeight:'85%'},
+  sheetHandle:{width:40,height:4,backgroundColor:'#E0E0E0',borderRadius:2,alignSelf:'center',marginBottom:20},
+  sheetTitle:{fontSize:20,fontWeight:'900',color:'#333',marginBottom:20},
+  empty:{alignItems:'center',padding:40},
+  emptyIcon:{fontSize:48,marginBottom:12},
+  emptyText:{fontSize:16,color:'#888',textAlign:'center'},
+  tripCard:{flexDirection:'row',alignItems:'center',padding:16,borderRadius:16,backgroundColor:'#F5F6FA',marginBottom:10},
+  tripLeft:{marginRight:14},
+  tripIcon:{fontSize:28},
+  tripInfo:{flex:1},
+  tripDest:{fontSize:15,fontWeight:'700',color:'#333',marginBottom:4},
+  tripDate:{fontSize:12,color:'#888',marginBottom:6},
+  tripStatus:{borderRadius:20,paddingHorizontal:10,paddingVertical:3,alignSelf:'flex-start'},
+  tripStatusText:{fontSize:11,fontWeight:'700'},
+  tripFare:{alignItems:'flex-end'},
+  tripFareText:{fontSize:16,fontWeight:'900',color:'#1B6B4A'},
+  tripFareCur:{fontSize:11,color:'#888'},
+  profileCard:{alignItems:'center',padding:24,backgroundColor:'#F0F7F4',borderRadius:20,marginBottom:16},
+  profileAvatar:{width:80,height:80,borderRadius:40,backgroundColor:'#C8E6C9',alignItems:'center',justifyContent:'center',marginBottom:12},
+  profilePhone:{fontSize:18,fontWeight:'800',color:'#333'},
+  profileSub:{fontSize:13,color:'#888',marginTop:4},
+  profileStats:{flexDirection:'row',backgroundColor:'#F5F6FA',borderRadius:16,padding:16,marginBottom:16},
+  profileStat:{flex:1,alignItems:'center'},
+  profileStatNum:{fontSize:20,fontWeight:'900',color:'#1B6B4A'},
+  profileStatLabel:{fontSize:11,color:'#888',marginTop:4},
+  logoutBtn:{backgroundColor:'#FFE5E5',borderRadius:14,padding:16,alignItems:'center'},
+  logoutBtnText:{color:'#E53935',fontWeight:'800',fontSize:15},
+});
 
 const rt = StyleSheet.create({
   modal:{backgroundColor:'#fff',borderTopLeftRadius:28,borderTopRightRadius:28,padding:28},
