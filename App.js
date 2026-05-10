@@ -370,6 +370,18 @@ export default function App() {
     setScreen('home');
   };
 
+  // Listen for driver en route (rider mode)
+  useEffect(() => {
+    if (userRole !== 'rider') return;
+    const s = connectSocket();
+    s.on('trip:driver_en_route', ({ trip_id, eta_minutes, driver }) => {
+      console.log('🚗 Driver en route!', eta_minutes);
+      setTripStatus('arriving');
+      setDriverInfo({ eta_minutes, ...driver });
+    });
+    return () => s.off('trip:driver_en_route');
+  }, [userRole]);
+
   // Listen for incoming ride requests (driver mode)
   useEffect(() => {
     if (userRole !== 'driver') return;
@@ -402,6 +414,8 @@ export default function App() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [bookedRide, setBookedRide] = useState(null);
+  const [tripStatus, setTripStatus] = useState('searching'); // searching | accepted | arriving | in_progress | completed
+  const [driverInfo, setDriverInfo] = useState(null);
 
   const fr = lang === 'fr';
   const schedHour = schedTime ? parseInt(schedTime.split(':')[0]) : null;
@@ -437,7 +451,13 @@ export default function App() {
 
   const confirmBooking = () => {
     setBookedRide({vehicle,destination:isCourse?stops.filter(s=>s.trim()).join(' → '):destination,fare,isCourse,isScheduled:rideMode==='later',schedDate,schedTime,night});
-    setShowConfirm(false);setShowSuccess(true);
+    setShowConfirm(false);
+    setShowSuccess(true);
+    // Join rider socket room so we receive driver updates
+    const s = connectSocket();
+    const userId = '329dfbe5-f621-4b4f-ba02-05d0858b96f4'; // TODO: use real user ID from token
+    joinAsRider(userId);
+    console.log('👤 Joined rider room:', userId);
   };
 
   const newRide = () => {
@@ -510,29 +530,89 @@ export default function App() {
   if(showSuccess&&bookedRide) return(
     <View style={s.container}>
       <ScrollView contentContainerStyle={s.successScroll}>
-        <View style={s.successIcon}><Text style={{fontSize:48}}>✅</Text></View>
-        <Text style={s.successTitle}>{fr?'Course confirmée !':'Ride confirmed!'}</Text>
-        <Text style={s.successSub}>{bookedRide.isScheduled?(fr?'Votre course est planifiée':'Your ride is scheduled'):(fr?'Recherche d\'un chauffeur...':'Looking for a driver...')}</Text>
-        <View style={s.successCard}>
-          <View style={s.successRow}><Text style={s.successLabel}>{fr?'Véhicule':'Vehicle'}</Text><Text style={s.successValue}>{bookedRide.vehicle.icon} {fr?bookedRide.vehicle.label_fr:bookedRide.vehicle.label_en}</Text></View>
-          <View style={s.successRow}><Text style={s.successLabel}>{fr?'Destination':'Destination'}</Text><Text style={s.successValue} numberOfLines={2}>{bookedRide.destination}</Text></View>
-          {bookedRide.isScheduled&&<><View style={s.successRow}><Text style={s.successLabel}>{fr?'Date':'Date'}</Text><Text style={s.successValue}>{formatDate(bookedRide.schedDate,lang)}</Text></View><View style={s.successRow}><Text style={s.successLabel}>{fr?'Heure':'Time'}</Text><Text style={s.successValue}>{bookedRide.schedTime}</Text></View></>}
-          <View style={s.successRow}><Text style={s.successLabel}>{fr?'Tarif estimé':'Est. fare'}</Text><Text style={[s.successValue,{color:GREEN,fontWeight:'800'}]}>{bookedRide.fare.toLocaleString()} XAF</Text></View>
-          {bookedRide.night&&<View style={s.nightBadge}><Text style={s.nightBadgeText}>🌙 {fr?'Tarif nuit appliqué':'Night rate applied'}</Text></View>}
+        {tripStatus === 'searching' && (
+          <View style={tk.statusCard}>
+            <Text style={tk.statusIcon}>🔍</Text>
+            <Text style={tk.statusTitle}>{fr ? 'Recherche chauffeur...' : 'Finding driver...'}</Text>
+            <Text style={tk.statusSub}>{fr ? 'Nous trouvons le meilleur chauffeur' : 'Finding best driver near you'}</Text>
+            <ActivityIndicator color="#1B6B4A" style={{marginTop:12}}/>
+          </View>
+        )}
+        {tripStatus === 'arriving' && (
+          <View style={[tk.statusCard, tk.statusCardGreen]}>
+            <Text style={tk.statusIcon}>🚗</Text>
+            <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'Chauffeur trouvé !' : 'Driver found!'}</Text>
+            <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'En route vers vous' : 'On the way to you'}</Text>
+          </View>
+        )}
+        {tripStatus === 'in_progress' && (
+          <View style={[tk.statusCard, {backgroundColor:'#1a1a2e'}]}>
+            <Text style={tk.statusIcon}>🏎️</Text>
+            <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'En course !' : 'Ride in progress!'}</Text>
+            <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'Bon voyage !' : 'Enjoy your ride!'}</Text>
+          </View>
+        )}
+        {tripStatus === 'completed' && (
+          <View style={[tk.statusCard, tk.statusCardGreen]}>
+            <Text style={tk.statusIcon}>✅</Text>
+            <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'Course terminée !' : 'Ride complete!'}</Text>
+            <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'Merci d\'avoir utilisé KribiGo' : 'Thanks for using KribiGo'}</Text>
+          </View>
+        )}
+        <View style={tk.stepsCard}>
+          {[
+            {key:'searching', icon:'🔍', fr:'Recherche',  en:'Searching'},
+            {key:'arriving',  icon:'🚗', fr:'En route',   en:'On the way'},
+            {key:'in_progress',icon:'🏎️',fr:'En course',  en:'In progress'},
+            {key:'completed', icon:'✅', fr:'Terminée',   en:'Completed'},
+          ].map((step,i,arr)=>{
+            const steps=['searching','arriving','in_progress','completed'];
+            const currentIdx=steps.indexOf(tripStatus);
+            const stepIdx=steps.indexOf(step.key);
+            const done=stepIdx<currentIdx;
+            const active=stepIdx===currentIdx;
+            return(
+              <View key={step.key}>
+                <View style={tk.stepRow}>
+                  <View style={[tk.stepDot,done&&tk.stepDotDone,active&&tk.stepDotActive]}>
+                    <Text style={tk.stepDotText}>{done?'✓':step.icon}</Text>
+                  </View>
+                  <Text style={[tk.stepLabel,active&&tk.stepLabelActive,done&&tk.stepLabelDone]}>{fr?step.fr:step.en}</Text>
+                </View>
+                {i<arr.length-1&&<View style={[tk.stepLine,done&&tk.stepLineDone]}/>}
+              </View>
+            );
+          })}
         </View>
-        {bookedRide.isScheduled&&(
-          <View style={s.reminderBox}>
-            <Text style={{fontSize:24,marginRight:12}}>🔔</Text>
-            <View style={{flex:1}}>
-              <Text style={s.reminderTitle}>{fr?'Rappel automatique':'Automatic reminder'}</Text>
-              <Text style={s.reminderSub}>{fr?'Vous serez notifié 30 minutes avant votre course':'You\'ll be notified 30 minutes before your ride'}</Text>
+        {(tripStatus==='arriving'||tripStatus==='in_progress')&&(
+          <View style={tk.driverCard}>
+            <View style={tk.driverAvatar}><Text style={{fontSize:32}}>👨‍✈️</Text></View>
+            <View style={tk.driverInfo}>
+              <Text style={tk.driverName}>{driverInfo?.name||'Chauffeur KribiGo'}</Text>
+              <Text style={tk.driverRating}>⭐ {driverInfo?.rating||'4.9'} • {bookedRide.vehicle.icon} {fr?bookedRide.vehicle.label_fr:bookedRide.vehicle.label_en}</Text>
+            </View>
+            <View style={tk.driverEta}>
+              <Text style={tk.driverEtaNum}>{driverInfo?.eta_minutes||5}</Text>
+              <Text style={tk.driverEtaLabel}>min</Text>
             </View>
           </View>
         )}
-        <TouchableOpacity style={s.newRideBtn} onPress={newRide}><Text style={s.newRideBtnText}>{fr?'+ Nouvelle course':'+ New ride'}</Text></TouchableOpacity>
-        <TouchableOpacity style={[s.newRideBtn,{marginTop:8,backgroundColor:'rgba(255,255,255,0.1)'}]} onPress={()=>setUserRole('driver')}>
-          <Text style={s.newRideBtnText}>{fr?'🚗 Passer en mode chauffeur':'🚗 Switch to driver mode'}</Text>
-        </TouchableOpacity>
+        <View style={s.successCard}>
+          <View style={s.successRow}><Text style={s.successLabel}>{fr?'Destination':'Destination'}</Text><Text style={s.successValue} numberOfLines={2}>{bookedRide.destination}</Text></View>
+          <View style={s.successRow}><Text style={s.successLabel}>{fr?'Véhicule':'Vehicle'}</Text><Text style={s.successValue}>{bookedRide.vehicle.icon} {fr?bookedRide.vehicle.label_fr:bookedRide.vehicle.label_en}</Text></View>
+          <View style={s.successRow}><Text style={s.successLabel}>{fr?'Tarif estimé':'Est. fare'}</Text><Text style={[s.successValue,{color:'#1B6B4A',fontWeight:'800'}]}>{bookedRide.fare.toLocaleString()} XAF</Text></View>
+          {bookedRide.night&&<View style={s.nightBadge}><Text style={s.nightBadgeText}>🌙 {fr?'Tarif nuit':'Night rate'}</Text></View>}
+        </View>
+        {tripStatus==='completed'?(
+          <TouchableOpacity style={s.newRideBtn} onPress={()=>{newRide();setTripStatus('searching');setDriverInfo(null);}}>
+            <Text style={s.newRideBtnText}>{fr?'+ Nouvelle course':'+ New ride'}</Text>
+          </TouchableOpacity>
+        ):tripStatus==='searching'?(
+          <TouchableOpacity style={[s.newRideBtn,{backgroundColor:'rgba(255,255,255,0.1)'}]} onPress={()=>{newRide();setTripStatus('searching');}}>
+            <Text style={s.newRideBtnText}>{fr?'Annuler':'Cancel'}</Text>
+          </TouchableOpacity>
+        ):null}
+        <View style={{height:40}}/>
       </ScrollView>
     </View>
   );
@@ -712,6 +792,34 @@ export default function App() {
 }
 
 const GREEN='#1B6B4A', ORANGE='#F4A827';
+
+const tk = StyleSheet.create({
+  statusCard:{backgroundColor:'#fff',marginHorizontal:16,marginTop:16,borderRadius:20,padding:24,alignItems:'center',shadowColor:'#000',shadowOpacity:0.08,shadowRadius:12,elevation:4},
+  statusCardGreen:{backgroundColor:'#1B6B4A'},
+  statusIcon:{fontSize:48,marginBottom:12},
+  statusTitle:{fontSize:22,fontWeight:'900',color:'#333',textAlign:'center',marginBottom:4},
+  statusSub:{fontSize:14,color:'#888',textAlign:'center'},
+  stepsCard:{backgroundColor:'#fff',marginHorizontal:16,marginTop:12,borderRadius:20,padding:20,shadowColor:'#000',shadowOpacity:0.06,shadowRadius:10,elevation:3},
+  stepRow:{flexDirection:'row',alignItems:'center',marginBottom:4},
+  stepDot:{width:36,height:36,borderRadius:18,backgroundColor:'#E0E0E0',alignItems:'center',justifyContent:'center',marginRight:12},
+  stepDotActive:{backgroundColor:'#1B6B4A'},
+  stepDotDone:{backgroundColor:'#C8E6C9'},
+  stepDotText:{fontSize:16},
+  stepLabel:{fontSize:14,color:'#999',flex:1},
+  stepLabelActive:{color:'#1B6B4A',fontWeight:'800'},
+  stepLabelDone:{color:'#888'},
+  stepLine:{width:2,height:16,backgroundColor:'#E0E0E0',marginLeft:17,marginBottom:4},
+  stepLineDone:{backgroundColor:'#1B6B4A'},
+  driverCard:{backgroundColor:'#fff',marginHorizontal:16,marginTop:12,borderRadius:20,padding:20,flexDirection:'row',alignItems:'center',shadowColor:'#000',shadowOpacity:0.06,shadowRadius:10,elevation:3},
+  driverAvatar:{width:56,height:56,borderRadius:28,backgroundColor:'#F0F7F4',alignItems:'center',justifyContent:'center',marginRight:14},
+  driverInfo:{flex:1},
+  driverName:{fontSize:16,fontWeight:'800',color:'#333'},
+  driverRating:{fontSize:13,color:'#888',marginTop:4},
+  driverEta:{alignItems:'center',backgroundColor:'#F0F7F4',borderRadius:12,padding:10,minWidth:52},
+  driverEtaNum:{fontSize:22,fontWeight:'900',color:'#1B6B4A'},
+  driverEtaLabel:{fontSize:11,color:'#888'},
+});
+
 
 const role = StyleSheet.create({
   scroll:{flexGrow:1,justifyContent:'center',padding:24,paddingTop:60},
