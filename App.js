@@ -381,7 +381,10 @@ export default function App() {
     s.on('trip:driver_en_route', ({ trip_id, eta_minutes, driver }) => {
       console.log('🚗 Driver en route!', eta_minutes);
       setTripStatus('arriving');
-      setDriverInfo({ eta_minutes, ...driver });
+      setDriverInfo({ eta_minutes, ...driver, vehicle_plate: driver.vehicle_plate || 'LT 1234 A', name: driver.name || 'Paul Manga' });
+      // Generate 4-digit security PIN
+      const pin = String(Math.floor(1000 + Math.random() * 9000));
+      setTripPin(pin);
     });
     s.on('trip:completed', () => {
       setTripStatus('completed');
@@ -424,6 +427,7 @@ export default function App() {
   const [bookedRide, setBookedRide] = useState(null);
   const [tripStatus, setTripStatus] = useState('searching'); // searching | accepted | arriving | in_progress | completed
   const [driverInfo, setDriverInfo] = useState(null);
+  const [tripPin, setTripPin] = useState(null);
   const [showRating, setShowRating] = useState(false);
   const [userRating, setUserRating] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
@@ -576,6 +580,37 @@ export default function App() {
               <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'Chauffeur trouvé !' : 'Driver found!'}</Text>
               <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'En route vers vous' : 'On the way to you'}</Text>
             </View>
+
+            {/* Security PIN Card */}
+            <View style={pin.pinCard}>
+              <View style={pin.pinHeader}>
+                <Text style={pin.pinHeaderIcon}>🔐</Text>
+                <View>
+                  <Text style={pin.pinHeaderTitle}>{fr ? 'Code de sécurité' : 'Security code'}</Text>
+                  <Text style={pin.pinHeaderSub}>{fr ? 'Montrez ce code à votre chauffeur' : 'Show this code to your driver'}</Text>
+                </View>
+              </View>
+              <View style={pin.pinDisplay}>
+                {tripPin && tripPin.split('').map((digit, i) => (
+                  <View key={i} style={pin.pinDigit}>
+                    <Text style={pin.pinDigitText}>{digit}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={pin.pinNote}>{fr ? "⚠️ Ne montrez ce code qu'une fois dans le véhicule" : '⚠️ Only show this code once inside the vehicle'}</Text>
+            </View>
+
+            {/* License plate card */}
+            {driverInfo?.vehicle_plate && (
+              <View style={pin.plateCard}>
+                <Text style={pin.plateLabel}>{fr ? "🚗 Vérifiez la plaque d'immatriculation" : '🚗 Check the license plate'}</Text>
+                <View style={pin.plateBadge}>
+                  <Text style={pin.plateBadgeText}>{driverInfo.vehicle_plate}</Text>
+                </View>
+                <Text style={pin.plateNote}>{fr ? 'Ne montez pas dans un véhicule avec une plaque différente' : 'Do not enter a vehicle with a different plate'}</Text>
+              </View>
+            )}
+
             <TouchableOpacity
               style={{backgroundColor:'rgba(255,255,255,0.15)',margin:16,borderRadius:16,padding:16,alignItems:'center',borderWidth:1.5,borderColor:'rgba(255,255,255,0.3)'}}
               onPress={() => { setTripStatus('completed'); setShowRating(true); }}>
@@ -971,6 +1006,24 @@ export default function App() {
 const GREEN='#1B6B4A', ORANGE='#F4A827';
 
 
+
+
+const pin = StyleSheet.create({
+  pinCard:{backgroundColor:'#fff',marginHorizontal:16,marginTop:12,borderRadius:20,padding:20,shadowColor:'#000',shadowOpacity:0.1,shadowRadius:12,elevation:5},
+  pinHeader:{flexDirection:'row',alignItems:'center',marginBottom:16},
+  pinHeaderIcon:{fontSize:28,marginRight:12},
+  pinHeaderTitle:{fontSize:16,fontWeight:'800',color:'#1B6B4A'},
+  pinHeaderSub:{fontSize:12,color:'#888',marginTop:2},
+  pinDisplay:{flexDirection:'row',justifyContent:'center',gap:12,marginBottom:14},
+  pinDigit:{width:56,height:64,borderRadius:14,backgroundColor:'#1B6B4A',alignItems:'center',justifyContent:'center',shadowColor:'#1B6B4A',shadowOpacity:0.3,shadowRadius:6,elevation:3},
+  pinDigitText:{fontSize:32,fontWeight:'900',color:'#fff'},
+  pinNote:{fontSize:11,color:'#E53935',textAlign:'center',fontWeight:'600'},
+  plateCard:{backgroundColor:'#FFF8E1',marginHorizontal:16,marginTop:10,borderRadius:16,padding:16,borderWidth:1.5,borderColor:'#F4A827'},
+  plateLabel:{fontSize:13,fontWeight:'700',color:'#7A5200',marginBottom:10},
+  plateBadge:{backgroundColor:'#1E293B',borderRadius:10,paddingVertical:10,paddingHorizontal:20,alignSelf:'center',marginBottom:8},
+  plateBadgeText:{fontSize:22,fontWeight:'900',color:'#fff',letterSpacing:4,fontFamily:'monospace'},
+  plateNote:{fontSize:11,color:'#7A5200',textAlign:'center',fontStyle:'italic'},
+});
 
 const tab = StyleSheet.create({
   bar:{flexDirection:'row',backgroundColor:'#fff',borderTopWidth:1,borderTopColor:'#E0E0E0',paddingBottom:20,paddingTop:10,position:'absolute',bottom:0,left:0,right:0},
