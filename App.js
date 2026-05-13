@@ -388,7 +388,7 @@ export default function App() {
     });
     s.on('trip:completed', () => {
       setTripStatus('completed');
-      setTimeout(() => setShowRating(true), 1000);
+      // Rating shown manually by user tapping the button
     });
     return () => s.off('trip:driver_en_route');
   }, [userRole]);
@@ -496,9 +496,18 @@ export default function App() {
   };
 
   const newRide = () => {
-    setShowSuccess(false);setDestination('');setStops(['','']);
-    setWaitUnits([0,0,0,0]);setIsCourse(false);setRideMode('now');
-    setSchedDate('');setSchedTime('');
+    setShowRating(false);
+    setShowSuccess(false);
+    setDestination('');
+    setStops(['','']);
+    setWaitUnits([0,0,0,0]);
+    setIsCourse(false);
+    setRideMode('now');
+    setSchedDate('');
+    setSchedTime('');
+    setTripStatus('searching');
+    setDriverInfo(null);
+    setTripPin(null);
   };
 
   const LangToggle = () => (
@@ -678,10 +687,10 @@ export default function App() {
         </View>
         {tripStatus==='completed'?(
           <View>
-            <TouchableOpacity style={s.newRideBtn} onPress={()=>setShowRating(true)}>
+            <TouchableOpacity style={s.newRideBtn} onPress={()=>{ setShowSuccess(false); setShowRating(true); }}>
               <Text style={s.newRideBtnText}>⭐ {fr?'Noter le chauffeur':'Rate driver'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.newRideBtn,{marginTop:8,backgroundColor:'rgba(255,255,255,0.1)'}]} onPress={()=>{newRide();setTripStatus('searching');setDriverInfo(null);}}>
+            <TouchableOpacity style={[s.newRideBtn,{marginTop:8,backgroundColor:'rgba(255,255,255,0.1)'}]} onPress={()=>newRide()}>
               <Text style={s.newRideBtnText}>{fr?'+ Nouvelle course':'+ New ride'}</Text>
             </TouchableOpacity>
           </View>
@@ -696,7 +705,7 @@ export default function App() {
   );
 
   // Rating modal at app level
-  if (showRating) return (
+  if (showRating && !showSuccess) return (
     <View style={s.container}>
       <ScrollView contentContainerStyle={{flexGrow:1, justifyContent:'center', padding:24}}>
         <View style={rt.modal}>
@@ -787,6 +796,9 @@ export default function App() {
       </Modal>
 
 
+      <TouchableOpacity onPress={()=>{setShowSuccess(true);setTripStatus('completed');setBookedRide({vehicle:VEHICLES[0],destination:'Test',fare:1950,isCourse:false,isScheduled:false,night:false});setDriverInfo({name:'Paul Manga',rating:'4.9',eta_minutes:5});}} style={{position:'absolute',top:120,right:16,zIndex:99,backgroundColor:'rgba(255,255,255,0.2)',borderRadius:20,padding:8}}>
+        <Text style={{color:'#fff',fontSize:12,fontWeight:'700'}}>🧪 Test</Text>
+      </TouchableOpacity>
       <View style={s.homeHeader}>
         <View>
           <Text style={s.homeGreeting}>{fr?'Bonjour 👋':'Hello 👋'}</Text>
