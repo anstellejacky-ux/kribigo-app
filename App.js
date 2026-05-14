@@ -6,15 +6,23 @@ import { connectSocket, joinAsRider, joinAsDriver, onNewRideRequest, offNewRideR
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import {
   View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform,
-  ActivityIndicator, Alert, ScrollView, Modal
+  ActivityIndicator, Alert, ScrollView, Modal, Animated
 } from 'react-native';
 
 
 const API = 'https://kribigo-backend.onrender.com/api/v1';
+
+function getTier(totalTrips) {
+  if (totalTrips >= 500) return {name:'Diamond', nameFr:'Diamant', icon:'💎', commission:8,  next:null,       nextTrips:0};
+  if (totalTrips >= 200) return {name:'Gold',    nameFr:'Or',      icon:'🥇', commission:10, next:'Diamond', nextTrips:500};
+  if (totalTrips >= 100) return {name:'Silver',  nameFr:'Argent',  icon:'🥈', commission:12, next:'Gold',    nextTrips:200};
+  return                        {name:'Bronze',  nameFr:'Bronze',  icon:'🥉', commission:15, next:'Silver',  nextTrips:100};
+}
 
 
 // ─── POPULAR KRIBI SPOTS ────────────────────────────────────
@@ -50,7 +58,7 @@ const PRICING = {
   economie: { base_day: 2000, base_night: 3000, per_km: 250 },
   confort:  { base_day: 2500, base_night: 3500, per_km: 350 },
 };
-const WAIT_RATE_PER_15MIN = 1000;
+const WAIT_RATE_PER_15MIN = 500;
 const NIGHT_START = 18;
 const NIGHT_END = 6;
 const MAX_STOPS = 4;
@@ -193,6 +201,56 @@ function DriverHome({phone, lang, onSwitchRole}){
   const fr = lang === 'fr';
   const [isOnline, setIsOnline] = useState(false);
   const [hasRequest, setHasRequest] = useState(false);
+  const [driverTripStatus, setDriverTripStatus] = useState(null);
+  const [acceptedTrip, setAcceptedTrip] = useState(null);
+  const [showPinInput, setShowPinInput] = useState(false);
+  const [enteredPin, setEnteredPin] = useState('');
+  const [pinError, setPinError] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [driverTab, setDriverTab] = useState('home');
+  const [driverName, setDriverName] = useState('');
+  const [driverPhoto, setDriverPhoto] = useState(null);
+  const [driverVehicle, setDriverVehicle] = useState('moto');
+  const [driverPlate, setDriverPlate] = useState('');
+  const [driverIdNumber, setDriverIdNumber] = useState('');
+  const [driverTotalTrips, setDriverTotalTrips] = useState(67);
+  const [earningsView, setEarningsView] = useState('week');
+  const [driverTrips, setDriverTrips] = useState([
+    {id:1, date:"Aujourd'hui 14:32", pickup:'Centre Ville', dest:'Chutes de la Lobé', fare:3200, status:'completed', vehicle:'Moto'},
+    {id:2, date:"Aujourd'hui 11:15", pickup:'Marché Central', dest:'Hôtel Seme Beach', fare:4500, status:'completed', vehicle:'Moto'},
+    {id:3, date:'Hier 18:44', pickup:'Gare Routière', dest:'Centre Ville', fare:2800, status:'completed', vehicle:'Moto'},
+    {id:4, date:'Hier 09:20', pickup:'Port de Kribi', dest:'Kribi Beach Hotel', fare:3900, status:'cancelled', vehicle:'Moto'},
+    {id:5, date:'Lun 16:05', pickup:'Centre Ville', dest:'Campo Beach', fare:8500, status:'completed', vehicle:'Moto'},
+  ]);
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+  // Load persisted driver profile
+  React.useEffect(() => {
+    (async () => {
+      const n = await SecureStore.getItemAsync('kribigo_driver_name');
+      const p = await SecureStore.getItemAsync('kribigo_driver_photo');
+      const v = await SecureStore.getItemAsync('kribigo_driver_vehicle');
+      const t = await SecureStore.getItemAsync('kribigo_driver_trips');
+      const pl = await SecureStore.getItemAsync('kribigo_driver_plate');
+      const id = await SecureStore.getItemAsync('kribigo_driver_id');
+      if (n) setDriverName(n);
+      if (p) setDriverPhoto(p);
+      if (v) setDriverVehicle(v);
+      if (t) setDriverTotalTrips(parseInt(t));
+      if (pl) setDriverPlate(pl);
+      if (id) setDriverIdNumber(id);
+    })();
+  }, []);
+  React.useEffect(() => {
+    if (isOnline && !driverTripStatus) {
+      Animated.loop(Animated.sequence([
+        Animated.timing(pulseAnim, {toValue:1.3, duration:700, useNativeDriver:true}),
+        Animated.timing(pulseAnim, {toValue:1, duration:700, useNativeDriver:true}),
+      ])).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isOnline, driverTripStatus]);
 
   // Simulate incoming request after going online
   const toggleOnline = () => {
@@ -202,6 +260,8 @@ function DriverHome({phone, lang, onSwitchRole}){
       setTimeout(() => setHasRequest(true), 3000);
     } else {
       setHasRequest(false);
+      setDriverTripStatus(null);
+      setAcceptedTrip(null);
     }
   };
 
@@ -211,6 +271,7 @@ function DriverHome({phone, lang, onSwitchRole}){
 
   return (
     <View style={s.container}>
+      {driverTab==='home' && <>
       {/* Incoming request modal */}
       <Modal visible={hasRequest} transparent animationType="slide">
         <View style={s.modalOverlay}>
@@ -249,7 +310,7 @@ function DriverHome({phone, lang, onSwitchRole}){
               <TouchableOpacity style={dr.declineBtn} onPress={() => setHasRequest(false)}>
                 <Text style={dr.declineBtnText}>{fr ? 'Refuser' : 'Decline'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={dr.acceptBtn} onPress={() => { setHasRequest(false); Alert.alert('✅', fr ? 'Course acceptée ! Rendez-vous au point de départ.' : 'Ride accepted! Head to pickup point.'); }}>
+              <TouchableOpacity style={dr.acceptBtn} onPress={() => { setHasRequest(false); Alert.alert('✅', fr ? 'Course acceptée ! En route vers le passager.' : 'Ride accepted! Head to pickup.', [{text: fr ? 'OK' : 'OK', onPress: () => setDriverTripStatus('en_route')}]); }}>
                 <Text style={dr.acceptBtnText}>{fr ? 'Accepter' : 'Accept'}</Text>
               </TouchableOpacity>
             </View>
@@ -284,14 +345,90 @@ function DriverHome({phone, lang, onSwitchRole}){
           </View>
         </TouchableOpacity>
 
-        {isOnline && (
+        {isOnline && !driverTripStatus && (
           <View style={dr.searchingBadge}>
-            <Text style={dr.searchingText}>🔍 {fr ? 'Recherche de passagers...' : 'Searching for riders...'}</Text>
+            <Animated.View style={{transform:[{scale:pulseAnim}],width:10,height:10,borderRadius:5,backgroundColor:'#1B6B4A',marginRight:8}}/>
+            <Text style={dr.searchingText}>{fr ? 'Recherche de passagers...' : 'Searching for riders...'}</Text>
           </View>
         )}
 
+        {driverTripStatus === 'en_route' && (
+          <View style={dr.tripStatusCard}>
+            <Text style={dr.tripStatusIcon}>🚗</Text>
+            <Text style={dr.tripStatusTitle}>{fr ? 'En route vers le passager' : 'Heading to rider'}</Text>
+            <Text style={dr.tripStatusSub}>{acceptedTrip?.pickup_address || 'Centre Ville, Kribi'}</Text>
+            <TouchableOpacity style={dr.arrivedBtn} onPress={() => {
+              setDriverTripStatus('pin_verify');
+              setShowPinInput(true);
+            }}>
+              <Text style={dr.arrivedBtnText}>📍 {fr ? 'Je suis arrivé' : 'I have arrived'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {driverTripStatus === 'in_progress' && (
+          <View style={[dr.tripStatusCard, {backgroundColor:'#1B6B4A'}]}>
+            <Text style={dr.tripStatusIcon}>⚡</Text>
+            <Text style={[dr.tripStatusTitle, {color:'#fff'}]}>{fr ? 'Course en cours' : 'Trip in progress'}</Text>
+            <Text style={[dr.tripStatusSub, {color:'rgba(255,255,255,0.8)'}]}>{acceptedTrip?.dest_address || ''}</Text>
+            <TouchableOpacity style={[dr.arrivedBtn, {backgroundColor:'#fff'}]} onPress={() => {
+              setDriverTripStatus(null);
+              setAcceptedTrip(null);
+              Alert.alert('✅', fr ? 'Course terminée !' : 'Trip completed!');
+            }}>
+              <Text style={[dr.arrivedBtnText, {color:'#1B6B4A'}]}>🏁 {fr ? 'Terminer la course' : 'End trip'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* PIN Modal */}
+        <Modal visible={showPinInput} transparent animationType="slide">
+          <View style={s.modalOverlay}>
+            <View style={dr.pinModal}>
+              <Text style={dr.pinTitle}>🔐 {fr ? 'Code de démarrage' : 'Start Code'}</Text>
+              <Text style={dr.pinSub}>{fr ? 'Demandez le code au passager' : 'Ask the rider for their code'}</Text>
+              <View style={dr.pinDisplay}>
+                {[0,1,2,3].map(i => (
+                  <View key={i} style={[dr.pinDot, enteredPin.length > i && dr.pinDotFilled]}/>
+                ))}
+              </View>
+              {pinError && <Text style={dr.pinError}>{fr ? '❌ Code incorrect' : '❌ Wrong code'}</Text>}
+              <View style={dr.numpad}>
+                {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k,i) => (
+                  <TouchableOpacity key={i} style={[dr.numKey, k==='' && {opacity:0}]}
+                    onPress={() => {
+                      if (k === '⌫') { setEnteredPin(p => p.slice(0,-1)); setPinError(false); }
+                      else if (k && enteredPin.length < 4) {
+                        const next = enteredPin + k;
+                        setEnteredPin(next);
+                        if (next.length === 4) {
+                          // Verify PIN against acceptedTrip or default test PIN
+                          const correctPin = acceptedTrip?.security_pin || '1234';
+                          if (next === correctPin) {
+                            setShowPinInput(false);
+                            setEnteredPin('');
+                            setDriverTripStatus('in_progress');
+                            Alert.alert('✅', fr ? 'Code correct ! Bonne course !' : 'Code correct! Have a good trip!');
+                          } else {
+                            setPinError(true);
+                            setTimeout(() => { setEnteredPin(''); setPinError(false); }, 1000);
+                          }
+                        }
+                      }
+                    }}>
+                    <Text style={dr.numKeyText}>{k}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity style={dr.pinCancelBtn} onPress={() => { setShowPinInput(false); setEnteredPin(''); setPinError(false); }}>
+                <Text style={dr.pinCancelText}>{fr ? 'Annuler' : 'Cancel'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         {/* Stats */}
-        <Text style={s.sectionTitle}>{fr ? 'Aujourd\'hui' : 'Today'}</Text>
+        <Text style={[s.sectionTitle, {marginTop: 20}]}>{fr ? 'Aujourd\'hui' : 'Today'}</Text>
         <View style={dr.statsRow}>
           <View style={dr.statCard}>
             <Text style={dr.statValue}>{todayEarnings.toLocaleString()}</Text>
@@ -308,21 +445,20 @@ function DriverHome({phone, lang, onSwitchRole}){
         </View>
 
         {/* Tier */}
+        {(()=>{ const tier=getTier(driverTotalTrips); const pct=tier.next?Math.min(100,Math.round((driverTotalTrips/(tier.nextTrips))*100)):100; return (
         <View style={dr.tierCard}>
           <View style={dr.tierLeft}>
-            <Text style={dr.tierIcon}>🥉</Text>
+            <Text style={dr.tierIcon}>{tier.icon}</Text>
             <View>
-              <Text style={dr.tierName}>Bronze</Text>
-              <Text style={dr.tierSub}>{fr ? '15% commission • 67 courses' : '15% commission • 67 trips'}</Text>
+              <Text style={dr.tierName}>{fr?tier.nameFr:tier.name}</Text>
+              <Text style={dr.tierSub}>{tier.commission}% commission • {driverTotalTrips} {fr?'courses':'trips'}</Text>
             </View>
           </View>
-          <View style={dr.tierProgress}>
-            <Text style={dr.tierProgressText}>{fr ? '33 courses → Argent 🥈' : '33 trips → Silver 🥈'}</Text>
-            <View style={dr.tierBar}>
-              <View style={[dr.tierBarFill, {width: '67%'}]}/>
-            </View>
-          </View>
-        </View>
+          {tier.next && <View style={dr.tierProgress}>
+            <Text style={dr.tierProgressText}>{tier.nextTrips-driverTotalTrips} {fr?'courses →':'trips →'} {fr?getTier(tier.nextTrips).nameFr:tier.next} {getTier(tier.nextTrips).icon}</Text>
+            <View style={dr.tierBar}><View style={[dr.tierBarFill, {width: pct+'%'}]}/></View>
+          </View>}
+        </View>);})()}
 
         {/* Weekly earnings */}
         <View style={dr.weekCard}>
@@ -340,8 +476,244 @@ function DriverHome({phone, lang, onSwitchRole}){
 
         {/* Simulate complete button for testing */}
 
-        <View style={{height:40}}/>
+        <View style={{height:100}}/>
       </ScrollView>
+      </>}
+
+      {/* COURSES TAB */}
+      {driverTab==='trips' && (
+        <ScrollView style={{flex:1}} contentContainerStyle={{padding:16,paddingTop:56,paddingBottom:100}}>
+          <Text style={[s.sectionTitle,{marginBottom:16}]}>{fr?'Mes courses':'My trips'}</Text>
+          {driverTrips.map(trip=>(
+            <View key={trip.id} style={dr.tripHistCard}>
+              <View style={dr.tripHistHeader}>
+                <Text style={dr.tripHistDate}>{trip.date}</Text>
+                <View style={[dr.tripHistBadge, trip.status==='completed'?{backgroundColor:'#E8F5E9'}:{backgroundColor:'#FFEBEE'}]}>
+                  <Text style={[dr.tripHistBadgeText, trip.status==='completed'?{color:'#2E7D32'}:{color:'#C62828'}]}>
+                    {trip.status==='completed'?(fr?'Terminée':'Completed'):(fr?'Annulée':'Cancelled')}
+                  </Text>
+                </View>
+              </View>
+              <View style={dr.tripHistRow}>
+                <Text style={{fontSize:16}}>📍</Text>
+                <Text style={dr.tripHistAddr} numberOfLines={1}>{trip.pickup}</Text>
+              </View>
+              <View style={dr.tripHistRow}>
+                <Text style={{fontSize:16}}>🏁</Text>
+                <Text style={dr.tripHistAddr} numberOfLines={1}>{trip.dest}</Text>
+              </View>
+              <View style={dr.tripHistFooter}>
+                <Text style={dr.tripHistVehicle}>🏍️ {trip.vehicle}</Text>
+                <Text style={dr.tripHistFare}>{trip.status==='completed'?trip.fare.toLocaleString()+' XAF':'-'}</Text>
+              </View>
+            </View>
+          ))}
+          {driverTrips.length===0&&(
+            <View style={{alignItems:'center',marginTop:60}}>
+              <Text style={{fontSize:40}}>📋</Text>
+              <Text style={{fontSize:16,color:'#999',marginTop:12}}>{fr?'Aucune course pour instant':'No trips yet'}</Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* PROFIL TAB */}
+      {driverTab==='profile' && (
+        <ScrollView style={{flex:1}} contentContainerStyle={{padding:16,paddingTop:56,paddingBottom:100}}>
+          <Text style={[s.sectionTitle,{marginBottom:16}]}>{fr?'Mon profil':'My profile'}</Text>
+          <View style={{alignItems:'center',marginBottom:24}}>
+            <TouchableOpacity onPress={async()=>{
+              const {status}=await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if(status!=='granted') return Alert.alert(fr?'Permission refusée':'Permission denied');
+              const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:ImagePicker.MediaTypeOptions.Images,allowsEditing:true,aspect:[1,1],quality:0.7});
+              if(!result.canceled) {
+                const uri = result.assets[0].uri;
+                setDriverPhoto(uri);
+                await SecureStore.setItemAsync('kribigo_driver_photo', uri);
+              }
+            }}>
+              {driverPhoto?(
+                <Image source={{uri:driverPhoto}} style={dr.profilePhoto}/>
+              ):(
+                <View style={dr.profilePhotoPlaceholder}>
+                  <Text style={{fontSize:40}}>📷</Text>
+                  <Text style={{fontSize:12,color:'#999',marginTop:4}}>{fr?'Ajouter photo':'Add photo'}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+          <Text style={dr.profileLabel}>{fr?'Nom complet':'Full name'}</Text>
+          <TextInput
+            style={dr.profileInput}
+            placeholder={fr?'Entrez votre nom...':'Enter your name...'}
+            placeholderTextColor="#999"
+            value={driverName}
+            onChangeText={setDriverName}
+          />
+          <Text style={dr.profileLabel}>{fr?'Téléphone':'Phone'}</Text>
+          <View style={dr.profileInputDisabled}>
+            <Text style={{color:'#666',fontSize:15}}>{phone}</Text>
+          </View>
+          <Text style={dr.profileLabel}>{fr?'Plaque d\'immatriculation':'License plate'}</Text>
+          <TextInput
+            style={dr.profileInput}
+            placeholder="Ex: LT 1234 A"
+            placeholderTextColor="#999"
+            value={driverPlate}
+            onChangeText={setDriverPlate}
+            autoCapitalize="characters"
+          />
+          <Text style={dr.profileLabel}>{fr?'Numéro CNI':'CNI number'}</Text>
+          <TextInput
+            style={dr.profileInput}
+            placeholder="Ex: 123456789"
+            placeholderTextColor="#999"
+            value={driverIdNumber}
+            onChangeText={setDriverIdNumber}
+          />
+          <Text style={dr.profileLabel}>{fr?'Véhicule':'Vehicle'}</Text>
+          <View style={{flexDirection:'row',gap:8,marginBottom:4}}>
+            {[{id:'moto',icon:'🏍️',label:'Moto'},{id:'economie',icon:'🚗',label:'Économie'},{id:'confort',icon:'🚙',label:'Confort'}].map(v=>(
+              <TouchableOpacity key={v.id} onPress={()=>{
+                setDriverVehicle(v.id);
+                SecureStore.setItemAsync('kribigo_driver_vehicle', v.id);
+              }} style={{flex:1,padding:10,borderRadius:12,alignItems:'center',borderWidth:2,borderColor:driverVehicle===v.id?'#1B6B4A':'#E0E0E0',backgroundColor:driverVehicle===v.id?'#E8F5EE':'#fff'}}>
+                <Text style={{fontSize:20}}>{v.icon}</Text>
+                <Text style={{fontSize:11,color:driverVehicle===v.id?'#1B6B4A':'#666',fontWeight:driverVehicle===v.id?'700':'400',marginTop:2}}>{v.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {(()=>{ const tier=getTier(driverTotalTrips); const pct=tier.next?Math.min(100,Math.round((driverTotalTrips/tier.nextTrips)*100)):100; return (
+          <View style={[dr.tierCard,{marginTop:16}]}>
+            <View style={dr.tierLeft}>
+              <Text style={dr.tierIcon}>{tier.icon}</Text>
+              <View>
+                <Text style={dr.tierName}>{fr?tier.nameFr:tier.name}</Text>
+                <Text style={dr.tierSub}>{tier.commission}% commission • {driverTotalTrips} {fr?'courses':'trips'}</Text>
+              </View>
+            </View>
+            {tier.next && <View style={dr.tierProgress}>
+              <Text style={dr.tierProgressText}>{tier.nextTrips-driverTotalTrips} {fr?'courses →':'trips →'} {fr?getTier(tier.nextTrips).nameFr:tier.next} {getTier(tier.nextTrips).icon}</Text>
+              <View style={dr.tierBar}><View style={[dr.tierBarFill,{width:pct+'%'}]}/></View>
+            </View>}
+          </View>);})()} 
+          <TouchableOpacity style={{backgroundColor:'#1B6B4A',borderRadius:12,padding:14,alignItems:'center',marginTop:16}} onPress={async()=>{
+            await SecureStore.setItemAsync('kribigo_driver_name', driverName);
+            await SecureStore.setItemAsync('kribigo_driver_plate', driverPlate);
+            await SecureStore.setItemAsync('kribigo_driver_id', driverIdNumber);
+            await SecureStore.setItemAsync('kribigo_driver_vehicle', driverVehicle);
+            Alert.alert('✅', fr?'Profil sauvegardé !':'Profile saved!');
+          }}>
+            <Text style={{color:'#fff',fontWeight:'700',fontSize:15}}>{fr?'💾 Sauvegarder':'💾 Save profile'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[dr.switchBtn,{marginTop:12}]} onPress={onSwitchRole}>
+            <Text style={dr.switchBtnText}>{fr?'🧑 Passer en mode Passager':'🧑 Switch to Rider mode'}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+
+      {/* GAINS TAB */}
+      {driverTab==='earnings' && (()=>{
+        const daily = [{label:fr?'Lun':'Mon',amount:7200},{label:fr?'Mar':'Tue',amount:9500},{label:fr?'Mer':'Wed',amount:4300},{label:fr?'Jeu':'Thu',amount:11200},{label:fr?'Ven':'Fri',amount:8900},{label:'Sam',amount:15400},{label:'Dim',amount:3200}];
+        const weekly = [{label:'S1',amount:42000},{label:'S2',amount:67500},{label:'S3',amount:38000},{label:'S4',amount:54200}];
+        const monthly = [{label:fr?'Jan':'Jan',amount:180000},{label:fr?'Fév':'Feb',amount:145000},{label:fr?'Mar':'Mar',amount:210000},{label:fr?'Avr':'Apr',amount:195000},{label:fr?'Mai':'May',amount:54200}];
+        const data = earningsView==='week'?daily:earningsView==='month'?weekly:monthly;
+        const maxAmt = Math.max(...data.map(d=>d.amount));
+        const total = data.reduce((s,d)=>s+d.amount,0);
+        return (
+        <ScrollView style={{flex:1}} contentContainerStyle={{padding:16,paddingTop:56,paddingBottom:100}}>
+          <Text style={[s.sectionTitle,{marginBottom:16}]}>{fr?'Mes gains':'My earnings'}</Text>
+          {/* Period selector */}
+          <View style={{flexDirection:'row',backgroundColor:'#F0F0F0',borderRadius:12,padding:4,marginBottom:20}}>
+            {[{id:'week',fr:'Cette semaine',en:'This week'},{id:'month',fr:'Ce mois',en:'This month'},{id:'year',fr:'Cette année',en:'This year'}].map(p=>(
+              <TouchableOpacity key={p.id} onPress={()=>setEarningsView(p.id)}
+                style={{flex:1,padding:8,borderRadius:10,alignItems:'center',backgroundColor:earningsView===p.id?'#fff':'transparent'}}>
+                <Text style={{fontSize:12,fontWeight:earningsView===p.id?'700':'400',color:earningsView===p.id?'#1B6B4A':'#999'}}>{fr?p.fr:p.en}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {/* Earnings breakdown */}
+          {(()=>{
+            const commission = getTier(driverTotalTrips).commission;
+            const commissionAmt = Math.round(total * commission / 100);
+            const net = total - commissionAmt;
+            return (
+            <View style={{marginBottom:20}}>
+              {/* Net — prominent */}
+              <View style={{backgroundColor:'#1B6B4A',borderRadius:16,padding:20,alignItems:'center',marginBottom:10}}>
+                <Text style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:4}}>{fr?'Vos gains nets':'Your net earnings'}</Text>
+                <Text style={{color:'#fff',fontSize:36,fontWeight:'800'}}>{net.toLocaleString()} XAF</Text>
+              </View>
+              {/* Gross + commission breakdown */}
+              <View style={{backgroundColor:'#fff',borderRadius:16,padding:16,shadowColor:'#000',shadowOpacity:0.06,shadowRadius:6,elevation:2}}>
+                <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:8,borderBottomWidth:1,borderBottomColor:'#F0F0F0'}}>
+                  <Text style={{fontSize:14,color:'#555'}}>{fr?'Tarifs encaissés (brut)':'Gross fares collected'}</Text>
+                  <Text style={{fontSize:15,fontWeight:'700',color:'#1a1a1a'}}>{total.toLocaleString()} XAF</Text>
+                </View>
+                <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:8,borderBottomWidth:1,borderBottomColor:'#F0F0F0'}}>
+                  <Text style={{fontSize:14,color:'#555'}}>{fr?'Commission KribiGo (':'KribiGo commission ('}{commission}%)</Text>
+                  <Text style={{fontSize:15,fontWeight:'700',color:'#E53E3E'}}>-{commissionAmt.toLocaleString()} XAF</Text>
+                </View>
+                <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:8}}>
+                  <Text style={{fontSize:14,fontWeight:'700',color:'#1B6B4A'}}>{fr?'À reverser à KribiGo':'To remit to KribiGo'}</Text>
+                  <Text style={{fontSize:15,fontWeight:'800',color:'#1B6B4A'}}>{commissionAmt.toLocaleString()} XAF</Text>
+                </View>
+              </View>
+            </View>
+            );
+          })()}
+          {/* Bar chart */}
+          <View style={{backgroundColor:'#fff',borderRadius:16,padding:16,marginBottom:20,shadowColor:'#000',shadowOpacity:0.06,shadowRadius:6,elevation:2}}>
+            <View style={{flexDirection:'row',alignItems:'flex-end',height:120,gap:6,justifyContent:'space-between'}}>
+              {data.map((d,i)=>(
+                <View key={i} style={{flex:1,alignItems:'center'}}>
+                  <View style={{width:'100%',height:Math.max(4,Math.round((d.amount/maxAmt)*100)),backgroundColor: i===data.length-1?'#1B6B4A':'#C8E6C9',borderRadius:6}}/>
+                  <Text style={{fontSize:10,color:'#999',marginTop:4}}>{d.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          {/* Summary cards */}
+          <View style={{flexDirection:'row',gap:12,marginBottom:20}}>
+            <View style={{flex:1,backgroundColor:'#fff',borderRadius:16,padding:16,alignItems:'center',shadowColor:'#000',shadowOpacity:0.06,shadowRadius:6,elevation:2}}>
+              <Text style={{fontSize:22}}>{driverVehicle==='moto'?'🏍️':driverVehicle==='economie'?'🚗':'🚙'}</Text>
+              <Text style={{fontSize:20,fontWeight:'800',color:'#1B6B4A',marginTop:4}}>{data.length}</Text>
+              <Text style={{fontSize:11,color:'#999',marginTop:2}}>{fr?'Courses':'Trips'}</Text>
+            </View>
+            <View style={{flex:1,backgroundColor:'#fff',borderRadius:16,padding:16,alignItems:'center',shadowColor:'#000',shadowOpacity:0.06,shadowRadius:6,elevation:2}}>
+              <Text style={{fontSize:22}}>📊</Text>
+              <Text style={{fontSize:20,fontWeight:'800',color:'#1B6B4A',marginTop:4}}>{Math.round(total/data.length).toLocaleString()}</Text>
+              <Text style={{fontSize:11,color:'#999',marginTop:2}}>{fr?'Moy/jour':'Avg/day'}</Text>
+            </View>
+            <View style={{flex:1,backgroundColor:'#fff',borderRadius:16,padding:16,alignItems:'center',shadowColor:'#000',shadowOpacity:0.06,shadowRadius:6,elevation:2}}>
+              <Text style={{fontSize:22}}>{getTier(driverTotalTrips).icon}</Text>
+              <Text style={{fontSize:20,fontWeight:'800',color:'#1B6B4A',marginTop:4}}>{getTier(driverTotalTrips).commission}%</Text>
+              <Text style={{fontSize:11,color:'#999',marginTop:2}}>{fr?'Commission':'Commission'}</Text>
+            </View>
+          </View>
+        </ScrollView>
+        );
+      })()}
+
+      {/* Bottom Tab Bar */}
+      <View style={dr.tabBar}>
+        <TouchableOpacity style={dr.tabItem} onPress={()=>setDriverTab('home')}>
+          <Text style={[dr.tabIcon, driverTab==='home'&&dr.tabIconActive]}>🏠</Text>
+          <Text style={[dr.tabLabel, driverTab==='home'&&dr.tabLabelActive]}>{fr?'Accueil':'Home'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={dr.tabItem} onPress={()=>setDriverTab('trips')}>
+          <Text style={[dr.tabIcon, driverTab==='trips'&&dr.tabIconActive]}>📋</Text>
+          <Text style={[dr.tabLabel, driverTab==='trips'&&dr.tabLabelActive]}>{fr?'Courses':'Trips'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={dr.tabItem} onPress={()=>setDriverTab('earnings')}>
+          <Text style={[dr.tabIcon, driverTab==='earnings'&&dr.tabIconActive]}>💰</Text>
+          <Text style={[dr.tabLabel, driverTab==='earnings'&&dr.tabLabelActive]}>{fr?'Gains':'Earnings'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={dr.tabItem} onPress={()=>setDriverTab('profile')}>
+          <Text style={[dr.tabIcon, driverTab==='profile'&&dr.tabIconActive]}>👤</Text>
+          <Text style={[dr.tabLabel, driverTab==='profile'&&dr.tabLabelActive]}>{fr?'Profil':'Profile'}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -471,9 +843,11 @@ export default function App() {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState('moto');
   const [isCourse, setIsCourse] = useState(false);
+  const [stopCoords, setStopCoords] = useState([null, null]);
   const [stops, setStops] = useState(['','']);
   const [waitUnits, setWaitUnits] = useState([0,0,0,0]);
   const [showWaitPicker, setShowWaitPicker] = useState(null);
+  const [activeStopIndex, setActiveStopIndex] = useState(0);
   const [schedDate, setSchedDate] = useState('');
   const [schedTime, setSchedTime] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
@@ -557,7 +931,6 @@ export default function App() {
       setRiderPhoto(result.assets[0].uri);
       const { saveRiderName } = require('./src/services/storage');
       // Store photo URI in SecureStore
-      const SecureStore = require('expo-secure-store');
       await SecureStore.setItemAsync('kribigo_rider_photo', result.assets[0].uri);
     }
   };
@@ -630,6 +1003,7 @@ export default function App() {
     setStops(['','']);
     setWaitUnits([0,0,0,0]);
     setIsCourse(false);
+    setStopCoords([null, null]);
     setRideMode('now');
     setSchedDate('');
     setSchedTime('');
@@ -703,32 +1077,7 @@ export default function App() {
 
   if(showSuccess&&bookedRide) return(
     <View style={s.container}>
-      {/* Map View */}
-      <MapView
-        provider={PROVIDER_GOOGLE}
-        style={{width:'100%', height:260}}
-        initialRegion={{
-          latitude: 2.9377,
-          longitude: 9.9097,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }}
-        showsUserLocation={true}
-        showsMyLocationButton={false}
-      >
-        {/* Pickup marker */}
-        <Marker
-          coordinate={{latitude: pickupCoords.lat, longitude: pickupCoords.lng}}
-          title={fr ? 'Votre position' : 'Your location'}
-          pinColor="#1B6B4A"
-        />
-        {/* Destination marker */}
-        <Marker
-          coordinate={{latitude: 2.9200, longitude: 9.9150}}
-          title={bookedRide.destination}
-          pinColor="#F4A827"
-        />
-      </MapView>
+
       <ScrollView contentContainerStyle={s.successScroll}>
         {tripStatus === 'searching' && (
           <View style={tk.statusCard}>
@@ -1108,25 +1457,87 @@ export default function App() {
           ):(
             <>
               <Text style={s.destLabel}>🔄 {fr?'Arrêts de la course':'Course stops'}</Text>
+              <TouchableOpacity
+                style={{flexDirection:'row',alignItems:'center',marginBottom:8,padding:8}}
+                onPress={() => setShowSpots(!showSpots)}>
+                <Text style={{fontSize:13,color:'#1B6B4A',fontWeight:'700'}}>
+                  📍 {fr ? 'Lieux populaires à Kribi' : 'Popular spots in Kribi'} {showSpots ? '▲' : '▼'}
+                </Text>
+              </TouchableOpacity>
+              {showSpots && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:8}} keyboardShouldPersistTaps="handled">
+                  <View style={{flexDirection:'row',gap:8,paddingBottom:4}}>
+                    {KRIBI_SPOTS.map((spot, si) => (
+                      <TouchableOpacity
+                        key={si}
+                        style={{backgroundColor:'#F0F7F4',borderRadius:20,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:'#C8E6C9',alignItems:'center',minWidth:100}}
+                        onPress={() => {
+                          const ns=[...stops]; ns[activeStopIndex]=spot.name; setStops(ns);
+                          const nc=[...stopCoords]; nc[activeStopIndex]={lat:spot.lat,lng:spot.lng}; setStopCoords(nc);
+                          const dist=haversineDistance(pickupCoords.lat,pickupCoords.lng,spot.lat,spot.lng);
+                          setRealDistanceKm(dist);
+                          setShowSpots(false);
+                        }}>
+                        <Text style={{fontSize:20}}>{spot.icon}</Text>
+                        <Text style={{fontSize:10,color:'#1B6B4A',fontWeight:'600',textAlign:'center',marginTop:2}} numberOfLines={2}>{spot.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
               {stops.map((stop,i)=>(
                 <View key={i}>
-                  <View style={s.stopRow}>
+                  <View style={{flexDirection:'row',alignItems:'flex-start',marginBottom:4}}>
                     <View style={s.stopBadge}><Text style={s.stopBadgeText}>{i+1}</Text></View>
-                    <TextInput style={s.stopInput}
-                      placeholder={i===0?(fr?'Premier arrêt...':'First stop...'):i===stops.length-1?(fr?'Dernier arrêt...':'Last stop...'):(fr?`Arrêt ${i+1}...`:`Stop ${i+1}...`)}
-                      placeholderTextColor="#999" value={stop} onChangeText={v=>{const ns=[...stops];ns[i]=v;setStops(ns);}}/>
-                    {stops.length>2&&<TouchableOpacity onPress={()=>setStops(stops.filter((_,idx)=>idx!==i))} style={s.removeBtn}><Text style={s.removeBtnText}>✕</Text></TouchableOpacity>}
+                    <View style={{flex:1}}>
+                      {stopCoords[i] ? (
+                        <TouchableOpacity
+                          onPress={() => {
+                            const ns=[...stops]; ns[i]=''; setStops(ns);
+                            const nc=[...stopCoords]; nc[i]=null; setStopCoords(nc);
+                            setRealDistanceKm(null);
+                          }}
+                          style={{flexDirection:'row',alignItems:'center',backgroundColor:'#F0F7F4',borderRadius:12,padding:12,marginBottom:4}}>
+                          <Text style={{flex:1,fontSize:14,color:'#1B6B4A',fontWeight:'600'}} numberOfLines={1}>{stop}</Text>
+                          <Text style={{color:'#999',fontSize:16,marginLeft:8}}>✕</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <GooglePlacesAutocomplete
+                          placeholder={i===0?(fr?'Premier arrêt...':'First stop...'):i===stops.length-1?(fr?'Dernier arrêt...':'Last stop...'):(fr?('Arrêt '+(i+1)+'...'):('Stop '+(i+1)+'...'))}
+                          textInputProps={{onFocus:()=>setActiveStopIndex(i)}}
+                          onPress={(data, details=null) => {
+                            const ns=[...stops]; ns[i]=data.description; setStops(ns);
+                            if(details?.geometry?.location){
+                              const nc=[...stopCoords]; nc[i]={lat:details.geometry.location.lat,lng:details.geometry.location.lng}; setStopCoords(nc);
+                              if(i===0){
+                                const dist=haversineDistance(pickupCoords.lat,pickupCoords.lng,details.geometry.location.lat,details.geometry.location.lng);
+                                setRealDistanceKm(dist);
+                              }
+                            }
+                          }}
+                          query={{key:'AIzaSyDnzBFjbB2dNIgiKhbfyazJpxXxNyzNwpQ',language:fr?'fr':'en',location:'2.9377,9.9097',radius:'50000',components:'country:cm'}}
+                          fetchDetails={true}
+                          enablePoweredByContainer={false}
+                          listViewDisplayed="auto"
+                          keyboardShouldPersistTaps="handled"
+                          styles={{
+                            textInput:s.destInput,
+                            listView:{backgroundColor:'#fff',borderRadius:12,marginTop:4,elevation:5,shadowColor:'#000',shadowOpacity:0.1,shadowRadius:8},
+                            row:{padding:14,borderBottomWidth:1,borderBottomColor:'#F0F0F0'},
+                            description:{fontSize:14,color:'#333'},
+                          }}
+                        />
+                      )}
+                    </View>
+                    {stops.length>2&&<TouchableOpacity onPress={()=>{
+                      setStops(stops.filter((_,idx)=>idx!==i));
+                      setStopCoords(stopCoords.filter((_,idx)=>idx!==i));
+                    }} style={[s.removeBtn,{marginTop:10}]}><Text style={s.removeBtnText}>✕</Text></TouchableOpacity>}
                   </View>
-                  {i<stops.length-1&&(
-                    <TouchableOpacity style={s.waitRow} onPress={()=>setShowWaitPicker(i)}>
-                      <Text style={s.waitIcon}>⏱️</Text>
-                      <Text style={s.waitText}>{waitUnits[i]===0?(fr?'Ajouter temps d\'attente':'Add wait time'):`${WAIT_OPTIONS.find(o=>o.value===waitUnits[i])?.label} • +${(waitUnits[i]*WAIT_RATE_PER_15MIN).toLocaleString()} XAF`}</Text>
-                      <Text style={s.waitChevron}>›</Text>
-                    </TouchableOpacity>
-                  )}
+
                 </View>
               ))}
-              {stops.length<MAX_STOPS&&<TouchableOpacity style={s.addStopBtn} onPress={()=>setStops([...stops,''])}><Text style={s.addStopText}>+ {fr?`Ajouter un arrêt (max ${MAX_STOPS})`:`Add stop (max ${MAX_STOPS})`}</Text></TouchableOpacity>}
+              {stops.length<MAX_STOPS&&<TouchableOpacity style={s.addStopBtn} onPress={()=>{setStops([...stops,'']);setStopCoords([...stopCoords,null]);}}><Text style={s.addStopText}>+ {fr?('Ajouter un arrêt (max '+MAX_STOPS+')'):('Add stop (max '+MAX_STOPS+')')}</Text></TouchableOpacity>}
               {totalWaitFare>0&&(
                 <View style={s.fareBreakdown}>
                   <View style={s.fareRow}><Text style={s.fareLabel}>{fr?'Distance estimée':'Est. distance'}</Text><Text style={s.fareValue}>{(fare-totalWaitFare).toLocaleString()} XAF</Text></View>
@@ -1137,6 +1548,11 @@ export default function App() {
             </>
           )}
         </View>
+
+              <View style={{backgroundColor:'#FFF8E1',borderRadius:12,padding:12,marginTop:8,marginBottom:4,flexDirection:'row',alignItems:'flex-start'}}>
+                <Text style={{fontSize:16,marginRight:8}}>⏱️</Text>
+                <Text style={{fontSize:12,color:'#7B5E00',flex:1,lineHeight:18}}>{fr?'Temps d\'attente : +500 XAF toutes les 15 min, ajouté automatiquement par le chauffeur.':'Wait time: +500 XAF every 15 min, added automatically by the driver.'}</Text>
+              </View>
 
         <Text style={s.sectionTitle}>{fr?'Choisissez votre véhicule':'Choose your vehicle'}</Text>
         {VEHICLES.map(v=>{
@@ -1431,8 +1847,47 @@ const dr = StyleSheet.create({
   togglePillActive:{backgroundColor:'rgba(255,255,255,0.3)'},
   toggleDot:{width:24,height:24,borderRadius:12,backgroundColor:'#999'},
   toggleDotActive:{backgroundColor:'#fff',alignSelf:'flex-end'},
-  searchingBadge:{backgroundColor:'rgba(255,255,255,0.15)',marginHorizontal:16,marginTop:8,borderRadius:12,padding:12,alignItems:'center'},
-  searchingText:{color:'#fff',fontWeight:'600',fontSize:14},
+  searchingBadge:{backgroundColor:'#E8F5EE',marginHorizontal:16,marginTop:8,borderRadius:12,padding:12,alignItems:'center',flexDirection:'row',justifyContent:'center'},
+  searchingText:{color:'#1B6B4A',fontWeight:'700',fontSize:14},
+  tripStatusCard:{backgroundColor:'#fff',marginHorizontal:16,marginTop:8,borderRadius:16,padding:20,shadowColor:'#000',shadowOpacity:0.08,shadowRadius:8,shadowOffset:{width:0,height:2},elevation:3},
+  tripStatusIcon:{fontSize:36,textAlign:'center',marginBottom:6},
+  tripStatusTitle:{fontSize:17,fontWeight:'700',color:'#1a1a1a',textAlign:'center',marginBottom:4},
+  tripStatusSub:{fontSize:13,color:'#666',textAlign:'center',marginBottom:16},
+  arrivedBtn:{backgroundColor:'#1B6B4A',borderRadius:12,paddingVertical:14,paddingHorizontal:24,alignItems:'center'},
+  arrivedBtnText:{color:'#fff',fontWeight:'700',fontSize:15},
+  tabBar:{flexDirection:'row',backgroundColor:'#fff',borderTopWidth:1,borderTopColor:'#E0E0E0',paddingBottom:20,paddingTop:10,position:'absolute',bottom:0,left:0,right:0},
+  tabItem:{flex:1,alignItems:'center'},
+  tabIcon:{fontSize:22},
+  tabIconActive:{},
+  tabLabel:{fontSize:11,color:'#999',marginTop:2},
+  tabLabelActive:{color:'#1B6B4A',fontWeight:'700'},
+  tripHistCard:{backgroundColor:'#fff',borderRadius:16,padding:16,marginBottom:12,shadowColor:'#000',shadowOpacity:0.06,shadowRadius:6,shadowOffset:{width:0,height:2},elevation:2},
+  tripHistHeader:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:10},
+  tripHistDate:{fontSize:12,color:'#999'},
+  tripHistBadge:{borderRadius:20,paddingHorizontal:10,paddingVertical:3},
+  tripHistBadgeText:{fontSize:11,fontWeight:'700'},
+  tripHistRow:{flexDirection:'row',alignItems:'center',gap:8,marginBottom:4},
+  tripHistAddr:{fontSize:14,color:'#333',flex:1},
+  tripHistFooter:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:8,paddingTop:8,borderTopWidth:1,borderTopColor:'#F0F0F0'},
+  tripHistVehicle:{fontSize:13,color:'#666'},
+  tripHistFare:{fontSize:16,fontWeight:'800',color:'#1B6B4A'},
+  profilePhoto:{width:100,height:100,borderRadius:50},
+  profilePhotoPlaceholder:{width:100,height:100,borderRadius:50,backgroundColor:'#F0F7F4',alignItems:'center',justifyContent:'center',borderWidth:2,borderColor:'#C8E6C9',borderStyle:'dashed'},
+  profileLabel:{fontSize:13,fontWeight:'700',color:'#222',marginBottom:6,marginTop:14},
+  profileInput:{backgroundColor:'#F8F8F8',borderRadius:12,padding:14,fontSize:15,color:'#1a1a1a',borderWidth:1,borderColor:'#E0E0E0'},
+  profileInputDisabled:{backgroundColor:'#F0F0F0',borderRadius:12,padding:14,borderWidth:1,borderColor:'#E0E0E0'},
+  pinModal:{backgroundColor:'#fff',borderRadius:24,padding:28,margin:24,alignItems:'center'},
+  pinTitle:{fontSize:20,fontWeight:'800',color:'#1a1a1a',marginBottom:6},
+  pinSub:{fontSize:13,color:'#666',marginBottom:20,textAlign:'center'},
+  pinDisplay:{flexDirection:'row',gap:16,marginBottom:12},
+  pinDot:{width:18,height:18,borderRadius:9,borderWidth:2,borderColor:'#1B6B4A'},
+  pinDotFilled:{backgroundColor:'#1B6B4A'},
+  pinError:{color:'#e53e3e',fontSize:13,marginBottom:8},
+  numpad:{flexDirection:'row',flexWrap:'wrap',width:240,marginTop:8},
+  numKey:{width:80,height:64,alignItems:'center',justifyContent:'center'},
+  numKeyText:{fontSize:24,fontWeight:'600',color:'#1a1a1a'},
+  pinCancelBtn:{marginTop:16,padding:12},
+  pinCancelText:{color:'#999',fontSize:14},
   statsRow:{flexDirection:'row',marginHorizontal:16,gap:10,marginBottom:12},
   statCard:{flex:1,backgroundColor:'#fff',borderRadius:16,padding:16,alignItems:'center',shadowColor:'#000',shadowOpacity:0.04,shadowRadius:6,elevation:2},
   statValue:{fontSize:20,fontWeight:'900',color:GREEN},
