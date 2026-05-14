@@ -202,6 +202,8 @@ function DriverHome({phone, lang, onSwitchRole}){
   const [isOnline, setIsOnline] = useState(false);
   const [hasRequest, setHasRequest] = useState(false);
   const [driverTripStatus, setDriverTripStatus] = useState(null);
+  const [waitTimeAdded, setWaitTimeAdded] = useState(0); // in units of 15min
+  const [showEndTripModal, setShowEndTripModal] = useState(false);
   const [acceptedTrip, setAcceptedTrip] = useState(null);
   const [showPinInput, setShowPinInput] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
@@ -265,8 +267,8 @@ function DriverHome({phone, lang, onSwitchRole}){
     }
   };
 
-  const todayEarnings = 11500;
-  const todayTrips = 4;
+  const todayEarnings = driverTrips.filter(t=>t.status==='completed' && t.date && t.date.startsWith("Aujourd'hui")).reduce((s,t)=>s+t.fare,0) || 11500;
+  const todayTrips = driverTrips.filter(t=>t.status==='completed' && t.date && t.date.startsWith("Aujourd'hui")).length || 4;
   const rating = 4.9;
 
   return (
@@ -381,15 +383,94 @@ function DriverHome({phone, lang, onSwitchRole}){
             <Text style={dr.tripStatusIcon}>⚡</Text>
             <Text style={[dr.tripStatusTitle, {color:'#fff'}]}>{fr ? 'Course en cours' : 'Trip in progress'}</Text>
             <Text style={[dr.tripStatusSub, {color:'rgba(255,255,255,0.8)'}]}>{acceptedTrip?.dest_address || ''}</Text>
-            <TouchableOpacity style={[dr.arrivedBtn, {backgroundColor:'#fff'}]} onPress={() => {
-              setDriverTripStatus(null);
-              setAcceptedTrip(null);
-              Alert.alert('✅', fr ? 'Course terminée !' : 'Trip completed!');
-            }}>
+            {/* Wait time adder */}
+            <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:12,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:12,padding:12}}>
+              <Text style={{color:'#fff',fontSize:13,fontWeight:'600'}}>⏱️ {fr?"Temps d'attente":'Wait time'}</Text>
+              <View style={{flexDirection:'row',alignItems:'center',gap:12}}>
+                <TouchableOpacity onPress={()=>setWaitTimeAdded(w=>Math.max(0,w-1))} style={{backgroundColor:'rgba(255,255,255,0.2)',borderRadius:8,width:32,height:32,alignItems:'center',justifyContent:'center'}}>
+                  <Text style={{color:'#fff',fontSize:18,fontWeight:'700'}}>−</Text>
+                </TouchableOpacity>
+                <Text style={{color:'#fff',fontSize:15,fontWeight:'700',minWidth:60,textAlign:'center'}}>{waitTimeAdded===0?(fr?'Aucun':'None'):(waitTimeAdded*15+' min')}</Text>
+                <TouchableOpacity onPress={()=>setWaitTimeAdded(w=>w+1)} style={{backgroundColor:'rgba(255,255,255,0.2)',borderRadius:8,width:32,height:32,alignItems:'center',justifyContent:'center'}}>
+                  <Text style={{color:'#fff',fontSize:18,fontWeight:'700'}}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <TouchableOpacity style={[dr.arrivedBtn, {backgroundColor:'#fff'}]} onPress={() => setShowEndTripModal(true)}>
               <Text style={[dr.arrivedBtnText, {color:'#1B6B4A'}]}>🏁 {fr ? 'Terminer la course' : 'End trip'}</Text>
             </TouchableOpacity>
           </View>
         )}
+
+        {/* End Trip Modal */}
+        <Modal visible={showEndTripModal} transparent animationType="slide">
+          <View style={s.modalOverlay}>
+            <View style={dr.endTripModal}>
+              <Text style={dr.endTripTitle}>🏁 {fr?'Résumé de la course':'Trip summary'}</Text>
+              {(()=>{
+                const baseFare = acceptedTrip?.fare || 3200;
+                const waitFare = waitTimeAdded * 500;
+                const total = baseFare + waitFare;
+                const commission = getTier(67).commission;
+                const commissionAmt = Math.round(total * commission / 100);
+                const net = total - commissionAmt;
+                return (
+                  <View style={{width:'100%'}}>
+                    <View style={dr.endTripRow}>
+                      <Text style={dr.endTripLabel}>{fr?'Tarif de base':'Base fare'}</Text>
+                      <Text style={dr.endTripValue}>{baseFare.toLocaleString()} XAF</Text>
+                    </View>
+                    {waitFare > 0 && <View style={dr.endTripRow}>
+                      <Text style={dr.endTripLabel}>{fr ? ("⏱️ Temps d'attente (" + (waitTimeAdded*15) + " min)") : ("⏱️ Wait time (" + (waitTimeAdded*15) + " min)")}</Text>
+                      <Text style={dr.endTripValue}>+{waitFare.toLocaleString()} XAF</Text>
+                    </View>}
+                    <View style={[dr.endTripRow, {borderTopWidth:1, borderTopColor:'#E0E0E0', marginTop:8, paddingTop:12}]}>
+                      <Text style={[dr.endTripLabel, {fontWeight:'800', color:'#1a1a1a', fontSize:16}]}>{fr?'Total à encaisser':'Total to collect'}</Text>
+                      <Text style={[dr.endTripValue, {fontWeight:'800', color:'#1B6B4A', fontSize:20}]}>{total.toLocaleString()} XAF</Text>
+                    </View>
+                    <View style={dr.endTripRow}>
+                      <Text style={dr.endTripLabel}>{fr?'Commission KribiGo':'KribiGo commission'} ({commission}%)</Text>
+                      <Text style={[dr.endTripValue, {color:'#E53E3E'}]}>-{commissionAmt.toLocaleString()} XAF</Text>
+                    </View>
+                    <View style={dr.endTripRow}>
+                      <Text style={[dr.endTripLabel, {color:'#1B6B4A', fontWeight:'700'}]}>{fr?'Vos gains nets':'Your net earnings'}</Text>
+                      <Text style={[dr.endTripValue, {color:'#1B6B4A', fontWeight:'700'}]}>{net.toLocaleString()} XAF</Text>
+                    </View>
+                    <TouchableOpacity style={[dr.arrivedBtn, {marginTop:20}]} onPress={()=>{
+                      const baseFare = acceptedTrip?.fare || 3200;
+                      const waitFare = waitTimeAdded * 500;
+                      const total = baseFare + waitFare;
+                      const now = new Date();
+                      const hours = now.getHours().toString().padStart(2,'0');
+                      const mins = now.getMinutes().toString().padStart(2,'0');
+                      const newTrip = {
+                        id: Date.now(),
+                        date: "Aujourd'hui " + hours + ':' + mins,
+                        pickup: acceptedTrip?.pickup_address || 'Centre Ville',
+                        dest: acceptedTrip?.dest_address || 'Destination',
+                        fare: total,
+                        status: 'completed',
+                        vehicle: driverVehicle === 'moto' ? 'Moto' : driverVehicle === 'economie' ? 'Économie' : 'Confort',
+                      };
+                      setDriverTrips(prev => [newTrip, ...prev]);
+                      setDriverTotalTrips(prev => prev + 1);
+                      setShowEndTripModal(false);
+                      setDriverTripStatus(null);
+                      setAcceptedTrip(null);
+                      setWaitTimeAdded(0);
+                      Alert.alert('✅', fr?'Course terminée ! Bonne continuation.':'Trip completed! Well done.');
+                    }}>
+                      <Text style={dr.arrivedBtnText}>✅ {fr?'Confirmer et terminer':'Confirm & end'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={()=>setShowEndTripModal(false)} style={{marginTop:12, alignItems:'center', padding:10}}>
+                      <Text style={{color:'#999', fontSize:14}}>{fr?'Annuler':'Cancel'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })()}
+            </View>
+          </View>
+        </Modal>
 
         {/* PIN Modal */}
         <Modal visible={showPinInput} transparent animationType="slide">
@@ -513,7 +594,7 @@ function DriverHome({phone, lang, onSwitchRole}){
                 <Text style={dr.tripHistAddr} numberOfLines={1}>{trip.dest}</Text>
               </View>
               <View style={dr.tripHistFooter}>
-                <Text style={dr.tripHistVehicle}>🏍️ {trip.vehicle}</Text>
+                <Text style={dr.tripHistVehicle}>{trip.vehicle==='Moto'?'🏍️':trip.vehicle==='Économie'?'🚗':'🚙'} {trip.vehicle}</Text>
                 <Text style={dr.tripHistFare}>{trip.status==='completed'?trip.fare.toLocaleString()+' XAF':'-'}</Text>
               </View>
             </View>
@@ -624,9 +705,22 @@ function DriverHome({phone, lang, onSwitchRole}){
 
       {/* GAINS TAB */}
       {driverTab==='earnings' && (()=>{
-        const daily = [{label:fr?'Lun':'Mon',amount:7200},{label:fr?'Mar':'Tue',amount:9500},{label:fr?'Mer':'Wed',amount:4300},{label:fr?'Jeu':'Thu',amount:11200},{label:fr?'Ven':'Fri',amount:8900},{label:'Sam',amount:15400},{label:'Dim',amount:3200}];
-        const weekly = [{label:'S1',amount:42000},{label:'S2',amount:67500},{label:'S3',amount:38000},{label:'S4',amount:54200}];
-        const monthly = [{label:fr?'Jan':'Jan',amount:180000},{label:fr?'Fév':'Feb',amount:145000},{label:fr?'Mar':'Mar',amount:210000},{label:fr?'Avr':'Apr',amount:195000},{label:fr?'Mai':'May',amount:54200}];
+        const dayLabels = [fr?'Lun':'Mon',fr?'Mar':'Tue',fr?'Mer':'Wed',fr?'Jeu':'Thu',fr?'Ven':'Fri','Sam','Dim'];
+        const today = new Date().getDay(); // 0=Sun
+        const daily = dayLabels.map((label, i) => {
+          const dayTrips = driverTrips.filter(t => {
+            if (t.status !== 'completed') return false;
+            // Match by day label in date string (simple approach for now)
+            return t.date && t.date.startsWith("Aujourd'hui") ? (i === (today===0?6:today-1)) : false;
+          });
+          const amount = dayTrips.reduce((s,t) => s+t.fare, 0);
+          return {label, amount};
+        });
+        // Ensure today has at least the real completed trips
+        const todayTotal = driverTrips.filter(t=>t.status==='completed' && t.date && t.date.startsWith("Aujourd'hui")).reduce((s,t)=>s+t.fare,0);
+        if (todayTotal > 0) daily[today===0?6:today-1].amount = todayTotal;
+        const weekly = [{label:'S1',amount:42000},{label:'S2',amount:67500},{label:'S3',amount:38000},{label:'S4',amount:54200+todayTotal}];
+        const monthly = [{label:fr?'Jan':'Jan',amount:180000},{label:fr?'Fév':'Feb',amount:145000},{label:fr?'Mar':'Mar',amount:210000},{label:fr?'Avr':'Apr',amount:195000},{label:fr?'Mai':'May',amount:54200+todayTotal}];
         const data = earningsView==='week'?daily:earningsView==='month'?weekly:monthly;
         const maxAmt = Math.max(...data.map(d=>d.amount));
         const total = data.reduce((s,d)=>s+d.amount,0);
@@ -1967,6 +2061,11 @@ const dr = StyleSheet.create({
   profileLabel:{fontSize:13,fontWeight:'700',color:'#222',marginBottom:6,marginTop:14},
   profileInput:{backgroundColor:'#F8F8F8',borderRadius:12,padding:14,fontSize:15,color:'#1a1a1a',borderWidth:1,borderColor:'#E0E0E0'},
   profileInputDisabled:{backgroundColor:'#F0F0F0',borderRadius:12,padding:14,borderWidth:1,borderColor:'#E0E0E0'},
+  endTripModal:{backgroundColor:'#fff',borderRadius:24,padding:24,margin:24,width:'90%',alignSelf:'center'},
+  endTripTitle:{fontSize:20,fontWeight:'800',color:'#1a1a1a',marginBottom:20,textAlign:'center'},
+  endTripRow:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:8},
+  endTripLabel:{fontSize:14,color:'#555',flex:1},
+  endTripValue:{fontSize:15,fontWeight:'600',color:'#1a1a1a'},
   pinModal:{backgroundColor:'#fff',borderRadius:24,padding:28,margin:24,alignItems:'center'},
   pinTitle:{fontSize:20,fontWeight:'800',color:'#1a1a1a',marginBottom:6},
   pinSub:{fontSize:13,color:'#666',marginBottom:20,textAlign:'center'},
