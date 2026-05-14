@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { persistLogin, loadSession, logout } from './src/services/auth';
+import { LogBox } from 'react-native';
+LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 import { connectSocket, joinAsRider, joinAsDriver, onNewRideRequest, offNewRideRequest, getSocket } from './src/services/socket';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
@@ -44,14 +49,18 @@ const DAYS_FR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 const DAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function isNightAt(hour) { return hour >= NIGHT_START || hour < NIGHT_END; }
-function calcFare({ type, isCourse, stops, waitUnits, scheduledHour }) {
+function calcFare({ type, isCourse, stops, waitUnits, scheduledHour, realDistanceKm }) {
   const p = PRICING[type];
   const hour = scheduledHour ?? new Date().getHours();
   const night = isNightAt(hour);
   const base = night ? p.base_night : p.base_day;
-  if (!isCourse) return base + Math.round(KM_PER_STOP * p.per_km);
+  if (!isCourse) {
+    const km = realDistanceKm || KM_PER_STOP;
+    return base + Math.round(km * p.per_km);
+  }
   const numLegs = Math.max(1, stops.filter(s => s.trim()).length);
-  const distFare = base + Math.round(numLegs * KM_PER_STOP * p.per_km);
+  const km = realDistanceKm || (numLegs * KM_PER_STOP);
+  const distFare = base + Math.round(km * p.per_km);
   const waitFare = (waitUnits||[]).reduce((sum,u) => sum + u * WAIT_RATE_PER_15MIN, 0);
   return distFare + waitFare;
 }
@@ -358,12 +367,12 @@ export default function App() {
   const [tripHistory, setTripHistory] = useState([]);
 
   useEffect(() => {
-    Promise.all([getToken(), getPhone(), getRole(), getUserId()]).then(([t, p, r, uid]) => {
-      if (t && p && r) {
-        setPhone(p);
-        setUserRole(r);
-        setToken(t);
-        setUserId(uid);
+    loadSession().then(session => {
+      if (session) {
+        setPhone(session.phone);
+        setUserRole(session.role);
+        setToken(session.token);
+        setUserId(session.userId);
         setScreen('home');
       } else {
         setScreen('login');
@@ -419,6 +428,11 @@ export default function App() {
 
   const [rideMode, setRideMode] = useState('now');
   const [destination, setDestination] = useState('');
+  const [destCoords, setDestCoords] = useState(null);
+  const [realDistanceKm, setRealDistanceKm] = useState(null);
+  const [pickupCoords, setPickupCoords] = useState({ lat: 2.9377, lng: 9.9097 });
+  const [pickupAddress, setPickupAddress] = useState('');
+  const [loadingLocation, setLoadingLocation] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState('moto');
   const [isCourse, setIsCourse] = useState(false);
   const [stops, setStops] = useState(['','']);
@@ -442,7 +456,7 @@ export default function App() {
   const fr = lang === 'fr';
   const schedHour = schedTime ? parseInt(schedTime.split(':')[0]) : null;
   const night = schedHour !== null ? isNightAt(schedHour) : isNightAt(new Date().getHours());
-  const fare = calcFare({type:selectedVehicle,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour});
+  const fare = calcFare({type:selectedVehicle,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour,realDistanceKm});
   const totalWaitFare = waitUnits.reduce((s,u)=>s+u*WAIT_RATE_PER_15MIN,0);
   const vehicle = VEHICLES.find(v=>v.id===selectedVehicle);
   const canBook = isCourse?stops.some(s=>s.trim()):destination.trim().length>0;
@@ -490,8 +504,51 @@ export default function App() {
     } catch(e) { console.log('History error:', e.message); }
   };
 
+  // Haversine distance calculator
+  const haversineDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return Math.round(R * c * 10) / 10; // km rounded to 1 decimal
+  };
+
+  // Get rider's current location
+  useEffect(() => {
+    (async () => {
+      setLoadingLocation(true);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setPickupAddress(fr ? 'Centre Ville, Kribi' : 'Centre Ville, Kribi');
+          setLoadingLocation(false);
+          return;
+        }
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const { latitude, longitude } = loc.coords;
+        setPickupCoords({ lat: latitude, lng: longitude });
+        
+        // Reverse geocode to get address
+        const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (geo[0]) {
+          const addr = [geo[0].street, geo[0].district, geo[0].city].filter(Boolean).join(', ');
+          setPickupAddress(addr || 'Ma position actuelle');
+        } else {
+          setPickupAddress('Ma position actuelle');
+        }
+      } catch(e) {
+        setPickupAddress('Centre Ville, Kribi');
+      } finally {
+        setLoadingLocation(false);
+      }
+    })();
+  }, []);
+
   const confirmBooking = () => {
-    setBookedRide({vehicle,destination:isCourse?stops.filter(s=>s.trim()).join(' → '):destination,fare,isCourse,isScheduled:rideMode==='later',schedDate,schedTime,night});
+    setBookedRide({vehicle,destination:isCourse?stops.filter(s=>s.trim()).join(' → '):destination,fare,isCourse,isScheduled:rideMode==='later',schedDate,schedTime,night,destLat:destCoords?.lat||2.9200,destLng:destCoords?.lng||9.9150,pickupLat:pickupCoords.lat,pickupLng:pickupCoords.lng,pickupAddress:pickupAddress||'Ma position actuelle'});
     setShowConfirm(false);
     setShowSuccess(true);
     // Join rider socket room so we receive driver updates
@@ -513,6 +570,8 @@ export default function App() {
     setTripStatus('searching');
     setDriverInfo(null);
     setTripPin(null);
+    setRealDistanceKm(null);
+    setDestCoords(null);
   };
 
   const LangToggle = () => (
@@ -578,6 +637,32 @@ export default function App() {
 
   if(showSuccess&&bookedRide) return(
     <View style={s.container}>
+      {/* Map View */}
+      <MapView
+        provider={PROVIDER_GOOGLE}
+        style={{width:'100%', height:260}}
+        initialRegion={{
+          latitude: 2.9377,
+          longitude: 9.9097,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+      >
+        {/* Pickup marker */}
+        <Marker
+          coordinate={{latitude: pickupCoords.lat, longitude: pickupCoords.lng}}
+          title={fr ? 'Votre position' : 'Your location'}
+          pinColor="#1B6B4A"
+        />
+        {/* Destination marker */}
+        <Marker
+          coordinate={{latitude: 2.9200, longitude: 9.9150}}
+          title={bookedRide.destination}
+          pinColor="#F4A827"
+        />
+      </MapView>
       <ScrollView contentContainerStyle={s.successScroll}>
         {tripStatus === 'searching' && (
           <View style={tk.statusCard}>
@@ -817,7 +902,7 @@ export default function App() {
         </View>
       </View>
 
-      <ScrollView style={s.homeScroll} keyboardShouldPersistTaps="handled">
+      <ScrollView style={s.homeScroll} keyboardShouldPersistTaps="handled" nestedScrollEnabled={true}>
         <View style={s.rideTypeRow}>
           <TouchableOpacity style={[s.rideTypeBtn,rideMode==='now'&&s.rideTypeBtnActive]} onPress={()=>setRideMode('now')}>
             <Text style={[s.rideTypeText,rideMode==='now'&&s.rideTypeTextActive]}>⚡ {fr?'Maintenant':'Now'}</Text>
@@ -859,11 +944,60 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
+        {/* Current location display */}
+        <View style={[s.destCard, {marginBottom:8}]}>
+          <Text style={s.destLabel}>📍 {fr?'Prise en charge':'Pickup'}</Text>
+          <View style={{flexDirection:'row', alignItems:'center', padding:12, backgroundColor:'#F0F7F4', borderRadius:12}}>
+            <Text style={{fontSize:16, marginRight:8}}>📍</Text>
+            <Text style={{flex:1, fontSize:14, color:'#1B6B4A', fontWeight:'600'}} numberOfLines={1}>
+              {loadingLocation ? (fr?'Détection de votre position...':'Detecting your location...') : (pickupAddress || 'Ma position actuelle')}
+            </Text>
+            {loadingLocation && <ActivityIndicator size="small" color="#1B6B4A"/>}
+          </View>
+        </View>
+
         <View style={s.destCard}>
           {!isCourse?(
             <>
               <Text style={s.destLabel}>📍 {fr?'Destination':'Destination'}</Text>
-              <TextInput style={s.destInput} placeholder={fr?'Entrez votre destination...':'Enter destination...'} placeholderTextColor="#999" value={destination} onChangeText={setDestination}/>
+              <GooglePlacesAutocomplete
+                placeholder={fr?'Entrez votre destination...':'Enter destination...'}
+                onPress={(data, details = null) => {
+                  setDestination(data.description);
+                  if (details?.geometry?.location) {
+                    const newCoords = {
+                      lat: details.geometry.location.lat,
+                      lng: details.geometry.location.lng,
+                    };
+                    setDestCoords(newCoords);
+                    // Calculate real distance
+                    const dist = haversineDistance(
+                      pickupCoords.lat, pickupCoords.lng,
+                      newCoords.lat, newCoords.lng
+                    );
+                    console.log('📏 Real distance:', dist, 'km');
+                    setRealDistanceKm(dist);
+                  }
+                }}
+                query={{
+                  key: 'AIzaSyDnzBFjbB2dNIgiKhbfyazJpxXxNyzNwpQ',
+                  language: fr ? 'fr' : 'en',
+                  location: '2.9377,9.9097',
+                  radius: '50000',
+                  components: 'country:cm',
+                }}
+                fetchDetails={true}
+                enablePoweredByContainer={false}
+                listViewDisplayed="auto"
+                nestedScrollEnabled={true}
+                keyboardShouldPersistTaps="handled"
+                styles={{
+                  textInput: s.destInput,
+                  listView: {backgroundColor:'#fff', borderRadius:12, marginTop:4, elevation:5, shadowColor:'#000', shadowOpacity:0.1, shadowRadius:8},
+                  row: {padding:14, borderBottomWidth:1, borderBottomColor:'#F0F0F0'},
+                  description: {fontSize:14, color:'#333'},
+                }}
+              />
             </>
           ):(
             <>
@@ -900,7 +1034,7 @@ export default function App() {
 
         <Text style={s.sectionTitle}>{fr?'Choisissez votre véhicule':'Choose your vehicle'}</Text>
         {VEHICLES.map(v=>{
-          const vFare=calcFare({type:v.id,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour});
+          const vFare=calcFare({type:v.id,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour,realDistanceKm});
           const selected=selectedVehicle===v.id;
           return(
             <TouchableOpacity key={v.id} style={[s.vehicleCard,selected&&s.vehicleCardSelected]} onPress={()=>setSelectedVehicle(v.id)}>

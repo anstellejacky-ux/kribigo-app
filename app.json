@@ -17,6 +17,9 @@
       "bundleIdentifier": "com.anstellejacky.kribigofresh",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyDnzBFjbB2dNIgiKhbfyazJpxXxNyzNwpQ"
       }
     },
     "android": {
@@ -26,7 +29,12 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anstellejacky.kribigofresh",
-      "icon": "./assets/kribigo-icon.png"
+      "icon": "./assets/kribigo-icon.png",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDnzBFjbB2dNIgiKhbfyazJpxXxNyzNwpQ"
+        }
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
