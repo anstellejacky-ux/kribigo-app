@@ -962,6 +962,8 @@ export default function App() {
   const [tripStatus, setTripStatus] = useState('searching'); // searching | accepted | arriving | in_progress | completed
   const [driverInfo, setDriverInfo] = useState(null);
   const [tripPin, setTripPin] = useState(null);
+  const [rideCount, setRideCount] = useState(0);
+  const [isFreeRide, setIsFreeRide] = useState(false);
   const [driverLocation, setDriverLocation] = useState(null);
   const [etaMinutes, setEtaMinutes] = useState(5);
   const [showRating, setShowRating] = useState(false);
@@ -972,7 +974,8 @@ export default function App() {
   const fr = lang === 'fr';
   const schedHour = schedTime ? parseInt(schedTime.split(':')[0]) : null;
   const night = schedHour !== null ? isNightAt(schedHour) : isNightAt(new Date().getHours());
-  const fare = calcFare({type:selectedVehicle,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour,realDistanceKm});
+  const rawFare = calcFare({type:selectedVehicle,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour,realDistanceKm});
+  const fare = isFreeRide ? 0 : rawFare;
   const totalWaitFare = waitUnits.reduce((s,u)=>s+u*WAIT_RATE_PER_15MIN,0);
   const vehicle = VEHICLES.find(v=>v.id===selectedVehicle);
   const canBook = isCourse?stops.some(s=>s.trim()):destination.trim().length>0;
@@ -1058,6 +1061,13 @@ export default function App() {
     const { getItemAsync } = require('expo-secure-store');
     getItemAsync('kribigo_rider_photo').then(photo => {
       if (photo) setRiderPhoto(photo);
+    });
+    getItemAsync('kribigo_rider_ride_count').then(count => {
+      if (count) {
+        const n = parseInt(count);
+        setRideCount(n);
+        setIsFreeRide(n % 10 === 9);
+      }
     }).catch(() => {});
   }, []);
 
@@ -1874,6 +1884,31 @@ export default function App() {
                 <Text style={tab.profileStatLabel}>{fr?'→ Gratuite':'→ Free'}</Text>
               </View>
             </View>
+            {/* Loyalty Progress */}
+            {(()=>{
+              const completed = tripHistory.filter(t=>t.status==='completed').length;
+              const progress = completed % 10;
+              const isNext = progress === 9;
+              return (
+                <View style={{backgroundColor: isNext?'#1B6B4A':'#F0F7F4', borderRadius:16, padding:16, marginBottom:16, width:'100%'}}>
+                  <View style={{flexDirection:'row', alignItems:'center', marginBottom:10}}>
+                    <Text style={{fontSize:22, marginRight:8}}>{isNext?'🎉':'🎁'}</Text>
+                    <View style={{flex:1}}>
+                      <Text style={{fontSize:14, fontWeight:'800', color: isNext?'#fff':'#1B6B4A'}}>
+                        {isNext ? (fr?'Votre prochaine course est GRATUITE !':'Your next ride is FREE!') : (fr?'Programme fidélité':'Loyalty program')}
+                      </Text>
+                      <Text style={{fontSize:12, color: isNext?'rgba(255,255,255,0.8)':'#666', marginTop:2}}>
+                        {isNext ? (fr?'Réservez votre prochaine course !':'Book your next ride!') : (fr?((9-progress)+' course(s) avant une gratuite'):((9-progress)+' rides until a free one'))}
+                      </Text>
+                    </View>
+                    <Text style={{fontSize:16, fontWeight:'800', color: isNext?'#fff':'#1B6B4A'}}>{progress+1}/10</Text>
+                  </View>
+                  <View style={{height:8, backgroundColor: isNext?'rgba(255,255,255,0.3)':'#C8E6C9', borderRadius:4}}>
+                    <View style={{height:8, backgroundColor: isNext?'#fff':'#1B6B4A', borderRadius:4, width:(((progress+1)/10)*100)+'%'}}/>
+                  </View>
+                </View>
+              );
+            })()}
             <TouchableOpacity style={tab.logoutBtn} onPress={handleLogout}>
               <Text style={tab.logoutBtnText}>{fr ? '🚪 Se déconnecter' : '🚪 Log out'}</Text>
             </TouchableOpacity>
