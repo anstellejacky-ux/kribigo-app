@@ -357,12 +357,22 @@ function DriverHome({phone, lang, onSwitchRole}){
             <Text style={dr.tripStatusIcon}>🚗</Text>
             <Text style={dr.tripStatusTitle}>{fr ? 'En route vers le passager' : 'Heading to rider'}</Text>
             <Text style={dr.tripStatusSub}>{acceptedTrip?.pickup_address || 'Centre Ville, Kribi'}</Text>
-            <TouchableOpacity style={dr.arrivedBtn} onPress={() => {
-              setDriverTripStatus('pin_verify');
-              setShowPinInput(true);
-            }}>
-              <Text style={dr.arrivedBtnText}>📍 {fr ? 'Je suis arrivé' : 'I have arrived'}</Text>
-            </TouchableOpacity>
+            <View style={{flexDirection:'row',gap:10}}>
+              <TouchableOpacity style={[dr.arrivedBtn,{flex:1,backgroundColor:'#fff',borderWidth:2,borderColor:'#1B6B4A'}]} onPress={()=>{
+                const lat = acceptedTrip?.pickup_lat || 2.9377;
+                const lng = acceptedTrip?.pickup_lng || 9.9097;
+                const { Linking } = require('react-native');
+                Linking.openURL('https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng + '&travelmode=driving');
+              }}>
+                <Text style={[dr.arrivedBtnText,{color:'#1B6B4A'}]}>🗺️ {fr?'Naviguer':'Navigate'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[dr.arrivedBtn,{flex:1}]} onPress={() => {
+                setDriverTripStatus('pin_verify');
+                setShowPinInput(true);
+              }}>
+                <Text style={dr.arrivedBtnText}>📍 {fr ? 'Je suis arrivé' : 'I have arrived'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -858,6 +868,8 @@ export default function App() {
   const [tripStatus, setTripStatus] = useState('searching'); // searching | accepted | arriving | in_progress | completed
   const [driverInfo, setDriverInfo] = useState(null);
   const [tripPin, setTripPin] = useState(null);
+  const [driverLocation, setDriverLocation] = useState(null);
+  const [etaMinutes, setEtaMinutes] = useState(5);
   const [showRating, setShowRating] = useState(false);
   const [userRating, setUserRating] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
@@ -986,6 +998,30 @@ export default function App() {
     })();
   }, []);
 
+  const simulateDriverMovement = React.useCallback(() => {
+    let dLat = pickupCoords.lat + 0.008;
+    let dLng = pickupCoords.lng + 0.006;
+    setDriverLocation({ lat: dLat, lng: dLng });
+    let eta = 5;
+    setEtaMinutes(eta);
+    const interval = setInterval(() => {
+      dLat = dLat - (dLat - pickupCoords.lat) * 0.15;
+      dLng = dLng - (dLng - pickupCoords.lng) * 0.15;
+      setDriverLocation({ lat: dLat, lng: dLng });
+      eta = Math.max(1, eta - 1);
+      setEtaMinutes(eta);
+    }, 4000);
+    return interval;
+  }, [pickupCoords]);
+
+  React.useEffect(() => {
+    let interval;
+    if (tripStatus === 'arriving') {
+      interval = simulateDriverMovement();
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [tripStatus]);
+
   const confirmBooking = () => {
     setBookedRide({vehicle,destination:isCourse?stops.filter(s=>s.trim()).join(' → '):destination,fare,isCourse,isScheduled:rideMode==='later',schedDate,schedTime,night,destLat:destCoords?.lat||2.9200,destLng:destCoords?.lng||9.9150,pickupLat:pickupCoords.lat,pickupLng:pickupCoords.lng,pickupAddress:pickupAddress||'Ma position actuelle'});
     setShowConfirm(false);
@@ -994,6 +1030,10 @@ export default function App() {
     const s = connectSocket();
     joinAsRider(userId);
     console.log('👤 Joined rider room:', userId);
+    setTimeout(() => {
+      setTripStatus('arriving');
+      setDriverInfo({name:'Jodel K.', rating:'4.9', vehicle_plate:'LT 1234 A'});
+    }, 4000);
   };
 
   const newRide = () => {
@@ -1010,6 +1050,8 @@ export default function App() {
     setTripStatus('searching');
     setDriverInfo(null);
     setTripPin(null);
+    setDriverLocation(null);
+    setEtaMinutes(5);
     setRealDistanceKm(null);
     setDestCoords(null);
   };
@@ -1077,6 +1119,29 @@ export default function App() {
 
   if(showSuccess&&bookedRide) return(
     <View style={s.container}>
+      {tripStatus === 'arriving' && driverLocation && (
+        <MapView
+          provider={PROVIDER_GOOGLE}
+          style={{width:'100%', height:280}}
+          region={{
+            latitude: (driverLocation.lat + pickupCoords.lat) / 2,
+            longitude: (driverLocation.lng + pickupCoords.lng) / 2,
+            latitudeDelta: Math.abs(driverLocation.lat - pickupCoords.lat) * 3 + 0.01,
+            longitudeDelta: Math.abs(driverLocation.lng - pickupCoords.lng) * 3 + 0.01,
+          }}
+        >
+          <Marker coordinate={{latitude: pickupCoords.lat, longitude: pickupCoords.lng}}>
+            <View style={{backgroundColor:'#1B6B4A',borderRadius:20,padding:8,borderWidth:3,borderColor:'#fff'}}>
+              <Text style={{fontSize:16}}>👤</Text>
+            </View>
+          </Marker>
+          <Marker coordinate={{latitude: driverLocation.lat, longitude: driverLocation.lng}}>
+            <View style={{backgroundColor:'#F4A827',borderRadius:20,padding:8,borderWidth:3,borderColor:'#fff'}}>
+              <Text style={{fontSize:16}}>{bookedRide.vehicle.icon}</Text>
+            </View>
+          </Marker>
+        </MapView>
+      )}
 
       <ScrollView contentContainerStyle={s.successScroll}>
         {tripStatus === 'searching' && (
@@ -1089,10 +1154,25 @@ export default function App() {
         )}
         {tripStatus === 'arriving' && (
           <View>
-            <View style={[tk.statusCard, tk.statusCardGreen]}>
-              <Text style={tk.statusIcon}>🚗</Text>
-              <Text style={[tk.statusTitle,{color:'#fff'}]}>{fr ? 'Chauffeur trouvé !' : 'Driver found!'}</Text>
-              <Text style={[tk.statusSub,{color:'rgba(255,255,255,0.85)'}]}>{fr ? 'En route vers vous' : 'On the way to you'}</Text>
+            <View style={tk.driverFoundCard}>
+              <View style={tk.driverFoundTop}>
+                <View style={tk.driverFoundAvatar}>
+                  <Text style={{fontSize:36}}>👨‍✈️</Text>
+                </View>
+                <View style={{flex:1,marginLeft:14}}>
+                  <Text style={tk.driverFoundName}>{driverInfo?.name||'Chauffeur KribiGo'}</Text>
+                  <Text style={tk.driverFoundRating}>⭐ {driverInfo?.rating||'4.9'}</Text>
+                  <Text style={tk.driverFoundPlate}>{driverInfo?.vehicle_plate||'LT 1234 A'}</Text>
+                </View>
+                <View style={tk.etaBubble}>
+                  <Text style={tk.etaNum}>{etaMinutes}</Text>
+                  <Text style={tk.etaMin}>min</Text>
+                </View>
+              </View>
+              <View style={tk.driverFoundDivider}/>
+              <Text style={tk.driverFoundStatus}>
+                {'🟢 ' + (fr ? ('En route · ' + etaMinutes + ' min') : ('On the way · ' + etaMinutes + ' min'))}
+              </Text>
             </View>
 
             {/* Security PIN Card */}
@@ -1813,6 +1893,17 @@ const tk = StyleSheet.create({
   driverInfo:{flex:1},
   driverName:{fontSize:16,fontWeight:'800',color:'#333'},
   driverRating:{fontSize:13,color:'#888',marginTop:4},
+  driverFoundCard:{backgroundColor:'#1B6B4A',margin:16,borderRadius:20,padding:20},
+  driverFoundTop:{flexDirection:'row',alignItems:'center'},
+  driverFoundAvatar:{width:64,height:64,borderRadius:32,backgroundColor:'rgba(255,255,255,0.2)',alignItems:'center',justifyContent:'center'},
+  driverFoundName:{fontSize:18,fontWeight:'800',color:'#fff'},
+  driverFoundRating:{fontSize:13,color:'rgba(255,255,255,0.8)',marginTop:2},
+  driverFoundPlate:{fontSize:13,color:'rgba(255,255,255,0.8)',marginTop:2,fontWeight:'600'},
+  driverFoundDivider:{height:1,backgroundColor:'rgba(255,255,255,0.2)',marginVertical:14},
+  driverFoundStatus:{fontSize:14,color:'rgba(255,255,255,0.9)',fontWeight:'600',textAlign:'center'},
+  etaBubble:{backgroundColor:'rgba(255,255,255,0.2)',borderRadius:16,padding:12,alignItems:'center',minWidth:64},
+  etaNum:{fontSize:28,fontWeight:'800',color:'#fff'},
+  etaMin:{fontSize:12,color:'rgba(255,255,255,0.8)',marginTop:-2},
   driverEta:{alignItems:'center',backgroundColor:'#F0F7F4',borderRadius:12,padding:10,minWidth:52},
   driverEtaNum:{fontSize:22,fontWeight:'900',color:'#1B6B4A'},
   driverEtaLabel:{fontSize:11,color:'#888'},
