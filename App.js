@@ -353,14 +353,17 @@ export default function App() {
   const [lang, setLang] = useState('fr');
   const [userRole, setUserRole] = useState(null);
   const [token, setToken] = useState(null);
+  const [userId, setUserId] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
   const [tripHistory, setTripHistory] = useState([]);
 
   useEffect(() => {
-    loadSession().then(session => {
-      if (session) {
-        setPhone(session.phone);
-        setUserRole(session.role);
+    Promise.all([getToken(), getPhone(), getRole(), getUserId()]).then(([t, p, r, uid]) => {
+      if (t && p && r) {
+        setPhone(p);
+        setUserRole(r);
+        setToken(t);
+        setUserId(uid);
         setScreen('home');
       } else {
         setScreen('login');
@@ -369,7 +372,10 @@ export default function App() {
   }, []);
 
   const handleRoleSelect = async (r) => {
-    await persistLogin(token, phone, r);
+    await saveToken(token);
+    await savePhone(phone);
+    await saveRole(r);
+    if (userId) await saveUserId(userId);
     setUserRole(r);
     setScreen('home');
   };
@@ -459,7 +465,7 @@ export default function App() {
     try {
       const res = await fetch(`${API}/auth/user/verify-otp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,code:otp})});
       const data = await res.json();
-      if(res.ok){ setToken(data.access_token); setScreen('role'); }
+      if(res.ok){ setToken(data.access_token); setUserId(data.user?.id); setScreen('role'); }
       else Alert.alert('Erreur',data.error||'Code invalide');
     } catch {Alert.alert('Erreur','Serveur inaccessible');}
     finally{setLoading(false);}
@@ -490,7 +496,6 @@ export default function App() {
     setShowSuccess(true);
     // Join rider socket room so we receive driver updates
     const s = connectSocket();
-    const userId = '329dfbe5-f621-4b4f-ba02-05d0858b96f4'; // TODO: use real user ID from token
     joinAsRider(userId);
     console.log('👤 Joined rider room:', userId);
   };
