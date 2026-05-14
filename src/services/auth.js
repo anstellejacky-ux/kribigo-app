@@ -1,4 +1,4 @@
-import { saveToken, savePhone, saveRole, getToken, getPhone, getRole, saveUserId, getUserId, clearAll } from './storage';
+import { saveToken, savePhone, saveRole, getToken, getPhone, getRole, saveUserId, getUserId, saveRiderName, getRiderName, clearAll } from './storage';
 
 export const persistLogin = async (token, phone, role, userId) => {
   await saveToken(token);
@@ -12,7 +12,8 @@ export const loadSession = async () => {
   const phone = await getPhone();
   const role = await getRole();
   const userId = await getUserId();
-  if (token && phone && role) return { token, phone, role, userId };
+  const riderName = await getRiderName();
+  if (token && phone && role) return { token, phone, role, userId, riderName };
   return null;
 };
 

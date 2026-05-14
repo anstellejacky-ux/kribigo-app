@@ -8,9 +8,12 @@ export const saveRole = async (role) => await SecureStore.setItemAsync('kribigo_
 export const getRole = async () => await SecureStore.getItemAsync('kribigo_role');
 export const saveUserId = async (id) => await SecureStore.setItemAsync('kribigo_user_id', id);
 export const getUserId = async () => await SecureStore.getItemAsync('kribigo_user_id');
+export const saveRiderName = async (name) => await SecureStore.setItemAsync('kribigo_rider_name', name);
+export const getRiderName = async () => await SecureStore.getItemAsync('kribigo_rider_name');
 export const clearAll = async () => {
   await SecureStore.deleteItemAsync('kribigo_token');
   await SecureStore.deleteItemAsync('kribigo_phone');
   await SecureStore.deleteItemAsync('kribigo_role');
   await SecureStore.deleteItemAsync('kribigo_user_id');
+  await SecureStore.deleteItemAsync('kribigo_rider_name');
 };

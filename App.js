@@ -5,15 +5,44 @@ LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 import { connectSocket, joinAsRider, joinAsDriver, onNewRideRequest, offNewRideRequest, getSocket } from './src/services/socket';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, KeyboardAvoidingView, Platform,
   ActivityIndicator, Alert, ScrollView, Modal
 } from 'react-native';
 
 
 const API = 'https://kribigo-backend.onrender.com/api/v1';
+
+
+// ─── POPULAR KRIBI SPOTS ────────────────────────────────────
+const KRIBI_SPOTS = [
+  { icon: '🌊', name: 'Chutes de la Lobé',         lat: 2.8720, lng: 9.9050 },
+  { icon: '🍔', name: 'Burger Bar',                 lat: 2.9380, lng: 9.9080 },
+  { icon: '⚓', name: 'Débarcadère Mboa Manga',     lat: 2.9350, lng: 9.9100 },
+  { icon: '🏨', name: 'Hotel Tara Plage',           lat: 2.9300, lng: 9.9120 },
+  { icon: '🏖️', name: 'Golden K Resort',            lat: 2.9250, lng: 9.9130 },
+  { icon: '🏨', name: 'Hotel Le Lagon Resort',      lat: 2.9200, lng: 9.9140 },
+  { icon: '🏨', name: 'Hotel Ilomba Beach',         lat: 2.8980, lng: 9.9020 },
+  { icon: '🏨', name: 'Hôtel le Phare',             lat: 2.9400, lng: 9.9090 },
+  { icon: '🍜', name: 'ChongQing Restaurant',       lat: 2.9370, lng: 9.9085 },
+  { icon: '🥖', name: 'Boulangerie du Peuple',      lat: 2.9360, lng: 9.9075 },
+  { icon: '🎵', name: "People's Club",              lat: 2.9355, lng: 9.9078 },
+  { icon: '🏢', name: 'Immeuble Emmergence - PAK',  lat: 2.9320, lng: 9.9060 },
+  { icon: '🔵', name: 'Carrefour Kingue',           lat: 2.9410, lng: 9.9095 },
+  { icon: '🏖️', name: 'Mykonos Paradise Kribi',    lat: 2.9280, lng: 9.9110 },
+  { icon: '🚢', name: 'Port Autonome de Kribi',     lat: 2.9450, lng: 9.9150 },
+  { icon: '🌴', name: 'Akiba Beach Lounge',         lat: 2.9310, lng: 9.9115 },
+  { icon: '🌿', name: 'Oasis Villa Kribi',          lat: 2.9290, lng: 9.9125 },
+  { icon: '🛒', name: 'Marché Central de Kribi',    lat: 2.9390, lng: 9.9070 },
+  { icon: '🛒', name: 'Marché Nkolbiteng',          lat: 2.9420, lng: 9.9055 },
+  { icon: '🎨', name: 'Marchés Artisanaux',         lat: 2.9375, lng: 9.9060 },
+  { icon: '⛵', name: 'Kribi Marina',               lat: 2.9340, lng: 9.9100 },
+  { icon: '💆', name: 'Elabi Pool & Spa',           lat: 2.9260, lng: 9.9120 },
+  { icon: '🏨', name: 'Angelina Hotel Kribi',       lat: 2.9330, lng: 9.9090 },
+];
 
 // ─── PRICING CONFIG ────────────────────────────────────────
 const PRICING = {
@@ -363,6 +392,10 @@ export default function App() {
   const [userRole, setUserRole] = useState(null);
   const [token, setToken] = useState(null);
   const [userId, setUserId] = useState(null);
+  const [riderName, setRiderName] = useState('');
+  const [riderPhoto, setRiderPhoto] = useState(null);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [tempName, setTempName] = useState('');
   const [activeTab, setActiveTab] = useState('home');
   const [tripHistory, setTripHistory] = useState([]);
 
@@ -373,6 +406,8 @@ export default function App() {
         setUserRole(session.role);
         setToken(session.token);
         setUserId(session.userId);
+        if (session.riderName) setRiderName(session.riderName);
+
         setScreen('home');
       } else {
         setScreen('login');
@@ -430,6 +465,7 @@ export default function App() {
   const [destination, setDestination] = useState('');
   const [destCoords, setDestCoords] = useState(null);
   const [realDistanceKm, setRealDistanceKm] = useState(null);
+  const [showSpots, setShowSpots] = useState(false);
   const [pickupCoords, setPickupCoords] = useState({ lat: 2.9377, lng: 9.9097 });
   const [pickupAddress, setPickupAddress] = useState('');
   const [loadingLocation, setLoadingLocation] = useState(false);
@@ -504,6 +540,28 @@ export default function App() {
     } catch(e) { console.log('History error:', e.message); }
   };
 
+  const pickPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(fr ? 'Permission requise' : 'Permission required',
+        fr ? "Autorisez l'accès à vos photos" : 'Please allow access to your photos');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      setRiderPhoto(result.assets[0].uri);
+      const { saveRiderName } = require('./src/services/storage');
+      // Store photo URI in SecureStore
+      const SecureStore = require('expo-secure-store');
+      await SecureStore.setItemAsync('kribigo_rider_photo', result.assets[0].uri);
+    }
+  };
+
   // Haversine distance calculator
   const haversineDistance = (lat1, lng1, lat2, lng2) => {
     const R = 6371; // Earth radius in km
@@ -515,6 +573,14 @@ export default function App() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return Math.round(R * c * 10) / 10; // km rounded to 1 decimal
   };
+
+  // Load saved photo on startup
+  useEffect(() => {
+    const { getItemAsync } = require('expo-secure-store');
+    getItemAsync('kribigo_rider_photo').then(photo => {
+      if (photo) setRiderPhoto(photo);
+    }).catch(() => {});
+  }, []);
 
   // Get rider's current location
   useEffect(() => {
@@ -960,6 +1026,46 @@ export default function App() {
           {!isCourse?(
             <>
               <Text style={s.destLabel}>📍 {fr?'Destination':'Destination'}</Text>
+              {/* Quick spots button */}
+              <TouchableOpacity
+                style={{flexDirection:'row',alignItems:'center',marginBottom:8,padding:8}}
+                onPress={() => setShowSpots(!showSpots)}>
+                <Text style={{fontSize:13,color:'#1B6B4A',fontWeight:'700'}}>
+                  📍 {fr ? 'Lieux populaires à Kribi' : 'Popular spots in Kribi'} {showSpots ? '▲' : '▼'}
+                </Text>
+              </TouchableOpacity>
+
+              {showSpots && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:8}} keyboardShouldPersistTaps="handled">
+                  <View style={{flexDirection:'row',gap:8,paddingBottom:4}}>
+                    {KRIBI_SPOTS.map((spot, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={{backgroundColor:'#F0F7F4',borderRadius:20,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:'#C8E6C9',alignItems:'center',minWidth:100}}
+                        onPress={() => {
+                          setDestination(spot.name);
+                          setDestCoords({ lat: spot.lat, lng: spot.lng });
+                          const dist = haversineDistance(pickupCoords.lat, pickupCoords.lng, spot.lat, spot.lng);
+                          setRealDistanceKm(dist);
+                          setShowSpots(false);
+                        }}>
+                        <Text style={{fontSize:20}}>{spot.icon}</Text>
+                        <Text style={{fontSize:10,color:'#1B6B4A',fontWeight:'600',textAlign:'center',marginTop:2}} numberOfLines={2}>{spot.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+
+              {destination && destCoords && !showSpots ? (
+                <TouchableOpacity
+                  onPress={() => { setDestination(''); setDestCoords(null); setRealDistanceKm(null); }}
+                  style={{flexDirection:'row', alignItems:'center', backgroundColor:'#F0F7F4', borderRadius:12, padding:14, marginBottom:4}}>
+                  <Text style={{flex:1, fontSize:15, color:'#1B6B4A', fontWeight:'600'}} numberOfLines={1}>{destination}</Text>
+                  <Text style={{color:'#999', fontSize:16, marginLeft:8}}>✕</Text>
+                </TouchableOpacity>
+              ) : null}
+
               <GooglePlacesAutocomplete
                 placeholder={fr?'Entrez votre destination...':'Enter destination...'}
                 onPress={(data, details = null) => {
@@ -1123,9 +1229,46 @@ export default function App() {
             <View style={tab.sheetHandle}/>
             <Text style={tab.sheetTitle}>{fr ? 'Mon profil' : 'My profile'}</Text>
             <View style={tab.profileCard}>
-              <View style={tab.profileAvatar}><Text style={{fontSize:40}}>👤</Text></View>
-              <Text style={tab.profilePhone}>+237 {phone}</Text>
-              <Text style={tab.profileSub}>{fr ? 'Membre KribiGo' : 'KribiGo member'}</Text>
+              <TouchableOpacity style={tab.profileAvatar} onPress={pickPhoto}>
+                {riderPhoto ? (
+                  <Image source={{uri: riderPhoto}} style={{width:80, height:80, borderRadius:40}}/>
+                ) : (
+                  <Text style={{fontSize:40}}>👤</Text>
+                )}
+                <View style={{position:'absolute',bottom:0,right:0,backgroundColor:'#1B6B4A',borderRadius:10,padding:3}}>
+                  <Text style={{fontSize:12}}>📷</Text>
+                </View>
+              </TouchableOpacity>
+              {editingProfile ? (
+                <View style={{width:'100%',alignItems:'center'}}>
+                  <TextInput
+                    style={{backgroundColor:'#fff',borderRadius:12,padding:12,fontSize:16,fontWeight:'700',textAlign:'center',width:200,marginBottom:8,borderWidth:1,borderColor:'#1B6B4A'}}
+                    value={tempName}
+                    onChangeText={setTempName}
+                    placeholder={fr?'Votre prénom...':'Your name...'}
+                    placeholderTextColor="#999"
+                    autoFocus
+                  />
+                  <View style={{flexDirection:'row',gap:8}}>
+                    <TouchableOpacity onPress={async ()=>{
+                      setRiderName(tempName);
+                      setEditingProfile(false);
+                      const { saveRiderName } = require('./src/services/storage');
+                      await saveRiderName(tempName);
+                    }} style={{backgroundColor:'#1B6B4A',borderRadius:10,paddingHorizontal:16,paddingVertical:8}}>
+                      <Text style={{color:'#fff',fontWeight:'700'}}>{fr?'Enregistrer':'Save'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={()=>setEditingProfile(false)} style={{backgroundColor:'#F5F5F5',borderRadius:10,paddingHorizontal:16,paddingVertical:8}}>
+                      <Text style={{color:'#888',fontWeight:'700'}}>{fr?'Annuler':'Cancel'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={()=>{setTempName(riderName);setEditingProfile(true);}}>
+                  <Text style={tab.profilePhone}>{riderName || '+237 ' + phone}</Text>
+                  <Text style={[tab.profileSub,{color:'#1B6B4A'}]}>{riderName ? '+237 ' + phone : (fr?'✏️ Ajouter votre nom':'✏️ Add your name')}</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <View style={tab.profileStats}>
               <View style={tab.profileStat}>
