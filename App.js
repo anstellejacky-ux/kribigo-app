@@ -1350,6 +1350,10 @@ export default function App() {
 
   const [rideMode, setRideMode] = useState('now');
   const [destination, setDestination] = useState('');
+  const [savedLocations, setSavedLocations] = useState([]);
+  const [showSaveLocationModal, setShowSaveLocationModal] = useState(false);
+  const [locationToSave, setLocationToSave] = useState(null);
+  const [saveLocationName, setSaveLocationName] = useState('');
   const [destCoords, setDestCoords] = useState(null);
   const [realDistanceKm, setRealDistanceKm] = useState(null);
   const [showSpots, setShowSpots] = useState(false);
@@ -1383,6 +1387,8 @@ export default function App() {
   const [driverApproved, setDriverApproved] = useState(null); // null=loading, false=needed, true=done
   const [ratingComment, setRatingComment] = useState('');
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingTags, setRatingTags] = useState([]);
+  const [acWorking, setAcWorking] = useState(null);
 
   const fr = lang === 'fr';
   const schedHour = schedTime ? parseInt(schedTime.split(':')[0]) : null;
@@ -1420,6 +1426,23 @@ export default function App() {
   const submitRating = async () => {
     if (userRating === 0) { Alert.alert(fr ? 'Erreur' : 'Error', fr ? 'Veuillez choisir une note' : 'Please select a rating'); return; }
     setRatingSubmitted(true);
+    // Offer to save destination after trip
+    if (bookedRide?.destination && bookedRide?.destLat && !savedLocations.find(l=>l.name===bookedRide.destination)) {
+      setTimeout(() => {
+        Alert.alert(
+          fr?'Sauvegarder ce lieu ?':'Save this location?',
+          bookedRide.destination,
+          [
+            {text:fr?'Non':'No', style:'cancel'},
+            {text:fr?'Oui, sauvegarder':'Yes, save', onPress:()=>{
+              setLocationToSave({lat:bookedRide.destLat, lng:bookedRide.destLng, address:bookedRide.destination});
+              setSaveLocationName('');
+              setShowSaveLocationModal(true);
+            }}
+          ]
+        );
+      }, 1500);
+    }
     setShowRating(false);
     Alert.alert(fr ? '⭐ Merci !' : '⭐ Thank you!', fr ? 'Votre avis a été envoyé au chauffeur' : 'Your rating has been sent to the driver');
     setTimeout(() => { newRide(); setTripStatus('searching'); setDriverInfo(null); setUserRating(0); setRatingComment(''); setRatingSubmitted(false); }, 1500);
@@ -1472,6 +1495,9 @@ export default function App() {
   // Load saved photo on startup
   useEffect(() => {
     const { getItemAsync } = require('expo-secure-store');
+    getItemAsync('kribigo_rider_saved_locations_' + phone).then(locs => {
+      if (locs) setSavedLocations(JSON.parse(locs));
+    });
     getItemAsync('kribigo_rider_photo_' + phone).then(photo => {
       if (photo) setRiderPhoto(photo);
     });
@@ -1550,6 +1576,8 @@ export default function App() {
     setTimeout(() => {
       setTripStatus('arriving');
       setDriverInfo({name:'Jodel K.', rating:'4.9', vehicle_plate:'LT 1234 A'});
+      const pin = String(Math.floor(1000 + Math.random() * 9000));
+      setTripPin(pin);
     }, 4000);
   };
 
@@ -1567,6 +1595,8 @@ export default function App() {
     setTripStatus('searching');
     setDriverInfo(null);
     setTripPin(null);
+    setRatingTags([]);
+    setAcWorking(null);
     setDriverLocation(null);
     setEtaMinutes(5);
     setRealDistanceKm(null);
@@ -1863,7 +1893,7 @@ export default function App() {
   // Rating modal at app level
   if (showRating && !showSuccess) return (
     <View style={s.container}>
-      <ScrollView contentContainerStyle={{flexGrow:1, justifyContent:'center', padding:24}}>
+      <ScrollView contentContainerStyle={{flexGrow:1, justifyContent:'center', padding:24}} keyboardShouldPersistTaps="handled">
         <View style={rt.modal}>
           <Text style={rt.title}>{fr ? 'Notez votre chauffeur' : 'Rate your driver'}</Text>
           <View style={rt.driverRow}>
@@ -1876,7 +1906,7 @@ export default function App() {
           <Text style={rt.starsLabel}>{fr ? 'Comment était votre course ?' : 'How was your ride?'}</Text>
           <View style={rt.starsRow}>
             {[1,2,3,4,5].map(star => (
-              <TouchableOpacity key={star} onPress={() => setUserRating(star)} style={rt.starBtn}>
+              <TouchableOpacity key={star} onPress={() => { setUserRating(star); setRatingTags([]); }} style={rt.starBtn}>
                 <Text style={[rt.star, userRating >= star && rt.starActive]}>{userRating >= star ? '⭐' : '☆'}</Text>
               </TouchableOpacity>
             ))}
@@ -1884,6 +1914,68 @@ export default function App() {
           <Text style={rt.ratingLabel}>
             {userRating === 0 ? '' : userRating === 1 ? (fr?'Très mauvais':'Very bad') : userRating === 2 ? (fr?'Mauvais':'Bad') : userRating === 3 ? (fr?'Correct':'OK') : userRating === 4 ? (fr?'Bien':'Good') : (fr?'Excellent !':'Excellent!')}
           </Text>
+
+          {/* Tags for low ratings (1-3) */}
+          {userRating > 0 && userRating <= 3 && (
+            <View style={{marginBottom:16}}>
+              <Text style={{fontSize:13,fontWeight:'700',color:'#555',marginBottom:10}}>{fr?"Qu'est-ce qui n'allait pas ?":'What went wrong?'}</Text>
+              <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
+                {[
+                  {id:'dangerous', fr:'Conduite dangereuse', en:'Dangerous driving'},
+                  {id:'dirty', fr:'Véhicule sale', en:'Dirty vehicle'},
+                  {id:'rude', fr:'Comportement irrespectueux', en:'Disrespectful behavior'},
+                  {id:'wrong_route', fr:'Mauvaise route', en:'Wrong route'},
+                  {id:'no_ac', fr:'Pas de climatisation', en:'No AC'},
+                  {id:'late', fr:'En retard', en:'Late arrival'},
+                ].map(tag => (
+                  <TouchableOpacity key={tag.id}
+                    onPress={() => setRatingTags(prev => prev.includes(tag.id) ? prev.filter(t=>t!==tag.id) : [...prev, tag.id])}
+                    style={{backgroundColor: ratingTags.includes(tag.id)?'#E53E3E':'#FFF0F0', borderRadius:20, paddingHorizontal:12, paddingVertical:8, borderWidth:1, borderColor: ratingTags.includes(tag.id)?'#E53E3E':'#FFCDD2'}}>
+                    <Text style={{fontSize:12, color: ratingTags.includes(tag.id)?'#fff':'#C62828', fontWeight:'600'}}>{fr?tag.fr:tag.en}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Tags for high ratings (4-5) */}
+          {userRating >= 4 && (
+            <View style={{marginBottom:16}}>
+              <Text style={{fontSize:13,fontWeight:'700',color:'#555',marginBottom:10}}>{fr?"Qu'est-ce qui s'est bien passé ?":'What went well?'}</Text>
+              <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
+                {[
+                  {id:'smooth', fr:'Conduite douce', en:'Smooth driving'},
+                  {id:'clean', fr:'Véhicule propre', en:'Clean vehicle'},
+                  {id:'friendly', fr:'Très sympathique', en:'Very friendly'},
+                  {id:'punctual', fr:'Ponctuel', en:'Punctual'},
+                  {id:'ac', fr:'Climatisation agréable', en:'Great AC'},
+                  {id:'safe', fr:'Trajet sécurisé', en:'Safe trip'},
+                ].map(tag => (
+                  <TouchableOpacity key={tag.id}
+                    onPress={() => setRatingTags(prev => prev.includes(tag.id) ? prev.filter(t=>t!==tag.id) : [...prev, tag.id])}
+                    style={{backgroundColor: ratingTags.includes(tag.id)?'#1B6B4A':'#F0F7F4', borderRadius:20, paddingHorizontal:12, paddingVertical:8, borderWidth:1, borderColor: ratingTags.includes(tag.id)?'#1B6B4A':'#C8E6C9'}}>
+                    <Text style={{fontSize:12, color: ratingTags.includes(tag.id)?'#fff':'#2E7D32', fontWeight:'600'}}>{fr?tag.fr:tag.en}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* AC check for Confort rides */}
+          {userRating > 0 && bookedRide?.vehicle?.id === 'confort' && (
+            <View style={{backgroundColor:'#E3F2FD',borderRadius:12,padding:14,marginBottom:16}}>
+              <Text style={{fontSize:13,fontWeight:'700',color:'#1565C0',marginBottom:10}}>❄️ {fr?'La climatisation était-elle allumée ?':'Was the AC on?'}</Text>
+              <View style={{flexDirection:'row',gap:10}}>
+                <TouchableOpacity onPress={()=>setAcWorking(true)} style={{flex:1,backgroundColor:acWorking===true?'#1565C0':'#fff',borderRadius:10,padding:12,alignItems:'center',borderWidth:1,borderColor:'#1565C0'}}>
+                  <Text style={{color:acWorking===true?'#fff':'#1565C0',fontWeight:'700'}}>{fr?'Oui':'Yes'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={()=>setAcWorking(false)} style={{flex:1,backgroundColor:acWorking===false?'#E53E3E':'#fff',borderRadius:10,padding:12,alignItems:'center',borderWidth:1,borderColor:'#E53E3E'}}>
+                  <Text style={{color:acWorking===false?'#fff':'#E53E3E',fontWeight:'700'}}>{fr?'Non':'No'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
           <TextInput
             style={rt.comment}
             placeholder={fr ? "Ajouter un commentaire (optionnel)..." : "Add a comment (optional)..."}
@@ -1896,7 +1988,28 @@ export default function App() {
           <TouchableOpacity style={[rt.submitBtn, userRating===0 && rt.submitBtnOff]} onPress={submitRating} disabled={userRating===0}>
             <Text style={rt.submitBtnText}>{fr ? 'Envoyer ma note' : 'Submit rating'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={rt.skipBtn} onPress={() => { setShowRating(false); newRide(); setTripStatus('searching'); setDriverInfo(null); }}>
+          <TouchableOpacity style={[rt.skipBtn,{alignSelf:'center'}]} onPress={() => {
+            // Offer to save destination even when skipping rating
+            if (bookedRide?.destination && bookedRide?.destLat && !savedLocations.find(l=>l.name===bookedRide.destination)) {
+              Alert.alert(
+                fr?'Sauvegarder ce lieu ?':'Save this location?',
+                bookedRide.destination,
+                [
+                  {text:fr?'Non':'No', style:'cancel', onPress:()=>{ setShowRating(false); newRide(); }},
+                  {text:fr?'Oui':'Yes', onPress:()=>{
+                    setLocationToSave({lat:bookedRide.destLat, lng:bookedRide.destLng, address:bookedRide.destination});
+                    setSaveLocationName('');
+                    setShowSaveLocationModal(true);
+                    setShowRating(false);
+                    newRide();
+                  }}
+                ]
+              );
+            } else {
+              setShowRating(false);
+              newRide();
+            }
+          }}>
             <Text style={rt.skipBtnText}>{fr ? 'Passer' : 'Skip'}</Text>
           </TouchableOpacity>
         </View>
@@ -2032,6 +2145,40 @@ export default function App() {
           {!isCourse?(
             <>
               <Text style={s.destLabel}>📍 {fr?'Destination':'Destination'}</Text>
+              {/* ⭐ Saved locations — above popular spots */}
+              {savedLocations.length > 0 && (
+                <View style={{marginBottom:8}}>
+                  <Text style={{fontSize:12,fontWeight:'700',color:'#888',marginBottom:6}}>⭐ {fr?'Mes lieux':'My places'}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={{flexDirection:'row',gap:8,paddingBottom:4}}>
+                      {savedLocations.map((loc, i) => (
+                        <TouchableOpacity key={i}
+                          style={{backgroundColor:'#FFFDE7',borderRadius:20,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:'#FFE082',flexDirection:'row',alignItems:'center',gap:6}}
+                          onPress={() => {
+                            setDestination(loc.name);
+                            setDestCoords({lat: loc.lat, lng: loc.lng});
+                            const dist = haversineDistance(pickupCoords.lat, pickupCoords.lng, loc.lat, loc.lng);
+                            setRealDistanceKm(dist);
+                          }}
+                          onLongPress={() => {
+                            Alert.alert(
+                              fr?'Supprimer ce lieu':'Delete this location',
+                              loc.name,
+                              [{text:fr?'Annuler':'Cancel',style:'cancel'},{text:fr?'Supprimer':'Delete',style:'destructive',onPress:async()=>{
+                                const updated = savedLocations.filter((_,idx)=>idx!==i);
+                                setSavedLocations(updated);
+                                await SecureStore.setItemAsync('kribigo_rider_saved_locations_' + phone, JSON.stringify(updated));
+                              }}]
+                            );
+                          }}>
+                          <Text style={{fontSize:16}}>⭐</Text>
+                          <Text style={{fontSize:13,color:'#F57F17',fontWeight:'600'}}>{loc.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
               {/* Quick spots button */}
               <TouchableOpacity
                 style={{flexDirection:'row',alignItems:'center',marginBottom:8,padding:8}}
@@ -2071,6 +2218,20 @@ export default function App() {
                   <Text style={{color:'#999', fontSize:16, marginLeft:8}}>✕</Text>
                 </TouchableOpacity>
               ) : null}
+
+              {/* Save current destination button */}
+              {destination && destCoords && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setLocationToSave({lat: destCoords.lat, lng: destCoords.lng, address: destination});
+                    setSaveLocationName('');
+                    setShowSaveLocationModal(true);
+                  }}
+                  style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:8,padding:8}}>
+                  <Text style={{fontSize:16}}>⭐</Text>
+                  <Text style={{fontSize:13,color:'#1B6B4A',fontWeight:'600'}}>{fr?'Sauvegarder ce lieu':'Save this location'}</Text>
+                </TouchableOpacity>
+              )}
 
               <GooglePlacesAutocomplete
                 placeholder={fr?'Entrez votre destination...':'Enter destination...'}
@@ -2114,6 +2275,36 @@ export default function App() {
           ):(
             <>
               <Text style={s.destLabel}>🔄 {fr?'Arrêts de la course':'Course stops'}</Text>
+              {/* Saved locations in Course tab */}
+              {savedLocations.length > 0 && (
+                <View style={{marginBottom:8}}>
+                  <Text style={{fontSize:12,fontWeight:'700',color:'#888',marginBottom:6}}>⭐ {fr?'Mes lieux':'My places'}</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    <View style={{flexDirection:'row',gap:8,paddingBottom:4}}>
+                      {savedLocations.map((loc, i) => (
+                        <TouchableOpacity key={i}
+                          style={{backgroundColor:'#FFFDE7',borderRadius:20,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:'#FFE082',flexDirection:'row',alignItems:'center',gap:6}}
+                          onPress={() => {
+                            const ns=[...stops]; ns[activeStopIndex]=loc.name; setStops(ns);
+                            const nc=[...stopCoords]; nc[activeStopIndex]={lat:loc.lat,lng:loc.lng}; setStopCoords(nc);
+                            const dist=haversineDistance(pickupCoords.lat,pickupCoords.lng,loc.lat,loc.lng);
+                            setRealDistanceKm(dist);
+                          }}
+                          onLongPress={()=>{
+                            Alert.alert(fr?'Supprimer':'Delete', loc.name,[{text:fr?'Annuler':'Cancel',style:'cancel'},{text:fr?'Supprimer':'Delete',style:'destructive',onPress:async()=>{
+                              const updated=savedLocations.filter((_,idx)=>idx!==i);
+                              setSavedLocations(updated);
+                              await SecureStore.setItemAsync('kribigo_rider_saved_locations_' + phone, JSON.stringify(updated));
+                            }}]);
+                          }}>
+                          <Text style={{fontSize:16}}>⭐</Text>
+                          <Text style={{fontSize:13,color:'#F57F17',fontWeight:'600'}}>{loc.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
               <TouchableOpacity
                 style={{flexDirection:'row',alignItems:'center',marginBottom:8,padding:8}}
                 onPress={() => setShowSpots(!showSpots)}>
@@ -2211,6 +2402,73 @@ export default function App() {
                 <Text style={{fontSize:12,color:'#7B5E00',flex:1,lineHeight:18}}>{fr?'Temps d\'attente : +500 XAF toutes les 15 min, ajouté automatiquement par le chauffeur.':'Wait time: +500 XAF every 15 min, added automatically by the driver.'}</Text>
               </View>
 
+
+        {/* Save Location Modal */}
+        <Modal visible={showSaveLocationModal} transparent animationType="slide">
+          <View style={s.modalOverlay}>
+            <View style={{backgroundColor:'#fff',borderRadius:24,padding:24,margin:24,width:'90%',alignSelf:'center'}}>
+              <Text style={{fontSize:18,fontWeight:'800',color:'#1a1a1a',marginBottom:6}}>{fr?'Sauvegarder ce lieu':'Save this location'}</Text>
+              <Text style={{fontSize:13,color:'#666',marginBottom:16}} numberOfLines={1}>{locationToSave?.address}</Text>
+              <Text style={{fontSize:13,fontWeight:'700',color:'#555',marginBottom:8}}>{fr?'Choisir un nom':'Choose a name'}</Text>
+              <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
+                {[
+                  {icon:'🏠', name:fr?'Maison':'Home'},
+                  {icon:'💼', name:fr?'Bureau':'Work'},
+                  {icon:'👨‍👩‍👧', name:fr?'Famille':'Family'},
+                  {icon:'🏫', name:fr?'École':'School'},
+                  {icon:'🏥', name:fr?'Hôpital':'Hospital'},
+                  {icon:'⛪', name:fr?'Église':'Church'},
+                ].map((preset, i) => (
+                  <TouchableOpacity key={i}
+                    onPress={() => setSaveLocationName(preset.icon + ' ' + preset.name)}
+                    style={{backgroundColor: saveLocationName === preset.icon + ' ' + preset.name ? '#1B6B4A' : '#F0F7F4',borderRadius:20,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:'#C8E6C9'}}>
+                    <Text style={{fontSize:13,color: saveLocationName === preset.icon + ' ' + preset.name ? '#fff' : '#1B6B4A',fontWeight:'600'}}>{preset.icon} {preset.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput
+                style={{backgroundColor:'#F8F8F8',borderRadius:12,padding:14,fontSize:15,borderWidth:1,borderColor:'#E0E0E0',marginBottom:20}}
+                placeholder={fr?'Ou entrez un nom personnalisé...':'Or enter a custom name...'}
+                placeholderTextColor="#999"
+                value={saveLocationName}
+                onChangeText={setSaveLocationName}
+              />
+              <View style={{flexDirection:'row',gap:10}}>
+                <TouchableOpacity style={{flex:1,backgroundColor:'#F0F0F0',borderRadius:12,padding:14,alignItems:'center'}} onPress={()=>setShowSaveLocationModal(false)}>
+                  <Text style={{color:'#666',fontWeight:'700'}}>{fr?'Annuler':'Cancel'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={{flex:2,backgroundColor: saveLocationName?'#1B6B4A':'rgba(0,0,0,0.1)',borderRadius:12,padding:14,alignItems:'center'}} onPress={async()=>{
+                  if(!saveLocationName) return;
+                  const icon = saveLocationName.startsWith('🏠')||saveLocationName.startsWith('💼')||saveLocationName.startsWith('👨')||saveLocationName.startsWith('🏫')||saveLocationName.startsWith('🏥')||saveLocationName.startsWith('⛪') ? '' : '📍';
+                  const newLoc = {name: saveLocationName, lat: locationToSave.lat, lng: locationToSave.lng, icon: icon || saveLocationName.split(' ')[0]};
+                  const updated = [...savedLocations.filter(l=>l.name!==saveLocationName), newLoc];
+                  setSavedLocations(updated);
+                  await SecureStore.setItemAsync('kribigo_rider_saved_locations_' + phone, JSON.stringify(updated));
+                  setShowSaveLocationModal(false);
+                  Alert.alert('✅', fr?('Lieu sauvegardé : ' + saveLocationName):('Location saved: ' + saveLocationName));
+                }}>
+                  <Text style={{color: saveLocationName?'#fff':'#999',fontWeight:'800'}}>{fr?'Sauvegarder':'Save'}</Text>
+                </TouchableOpacity>
+              </View>
+              {/* Delete saved locations */}
+              {savedLocations.length > 0 && (
+                <TouchableOpacity style={{marginTop:12,alignItems:'center',padding:8}} onPress={async()=>{
+                  Alert.alert(
+                    fr?'Supprimer tous les lieux':'Delete all locations',
+                    fr?'Voulez-vous supprimer tous vos lieux sauvegardés ?':'Delete all saved locations?',
+                    [{text:fr?'Annuler':'Cancel',style:'cancel'},{text:fr?'Supprimer':'Delete',style:'destructive',onPress:async()=>{
+                      setSavedLocations([]);
+                      await SecureStore.setItemAsync('kribigo_rider_saved_locations_' + phone, JSON.stringify([]));
+                      setShowSaveLocationModal(false);
+                    }}]
+                  );
+                }}>
+                  <Text style={{color:'#E53E3E',fontSize:13}}>{fr?'Supprimer tous les lieux sauvegardés':'Delete all saved locations'}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </Modal>
         <Text style={s.sectionTitle}>{fr?'Choisissez votre véhicule':'Choose your vehicle'}</Text>
         {VEHICLES.map(v=>{
           const vFare=calcFare({type:v.id,isCourse,stops:isCourse?stops:[destination],waitUnits,scheduledHour:schedHour,realDistanceKm});
