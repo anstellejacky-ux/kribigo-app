@@ -1036,7 +1036,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
               <TouchableOpacity key={v.id} onPress={()=>{
                 setDriverVehicle(v.id);
                 SecureStore.setItemAsync('kribigo_driver_vehicle_' + phone, v.id);
-              }} style={{flex:1,padding:10,borderRadius:12,alignItems:'center',borderWidth:2,borderColor:driverVehicle===v.id?'#1B6B4A':'#E0E0E0',backgroundColor:driverVehicle===v.id?'#E8F5EE':'#fff'}}>
+              }} style={{flex:1,padding:10,borderRadius:12,alignItems:'center',borderWidth:driverVehicle===v.id?3:1,borderColor:driverVehicle===v.id?'#1B6B4A':'#E0E0E0',backgroundColor:driverVehicle===v.id?'#E8F5EE':'#fff',shadowColor:'#1B6B4A',shadowOpacity:driverVehicle===v.id?0.3:0,shadowRadius:4,elevation:driverVehicle===v.id?3:0}}>
                 <Text style={{fontSize:20}}>{v.icon}</Text>
                 <Text style={{fontSize:11,color:driverVehicle===v.id?'#1B6B4A':'#666',fontWeight:driverVehicle===v.id?'700':'400',marginTop:2}}>{v.label}</Text>
               </TouchableOpacity>
@@ -1070,7 +1070,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
             await SecureStore.setItemAsync('kribigo_driver_plate_' + phone, driverPlate);
             await SecureStore.setItemAsync('kribigo_driver_id_' + phone, driverIdNumber);
             await SecureStore.setItemAsync('kribigo_driver_vehicle_' + phone, driverVehicle);
-            Alert.alert('✅', fr?'Profil sauvegardé !':'Profile saved!');
+            Alert.alert('✅', fr?'Profil sauvegardé !':'Profile saved!', [{text:'OK', onPress:()=>setDriverTab('home')}]);
           }}>
             <Text style={{color:'#fff',fontWeight:'700',fontSize:15}}>{fr?'💾 Sauvegarder':'💾 Save profile'}</Text>
           </TouchableOpacity>
@@ -1294,10 +1294,11 @@ export default function App() {
       setUserRole(r);
       if (r === 'driver') {
         const done = await SecureStore.getItemAsync('kribigo_driver_onboarding_' + phone);
-        setOnboardingComplete(done === 'true');
-        // Test driver 699000001 is always pre-approved
         const approved = await SecureStore.getItemAsync('kribigo_driver_approved_' + phone);
-        setDriverApproved(phone === '699000001' || approved === 'true');
+        // Test driver 699000001 always bypasses onboarding and is pre-approved
+        const isTestDriver = phone === '699000001';
+        setOnboardingComplete(isTestDriver || done === 'true');
+        setDriverApproved(isTestDriver || approved === 'true');
       } else {
         setOnboardingComplete(true);
       }
@@ -2075,8 +2076,9 @@ export default function App() {
           <TouchableOpacity onPress={async()=>{
               const done = await SecureStore.getItemAsync('kribigo_driver_onboarding_' + phone);
               const approved = await SecureStore.getItemAsync('kribigo_driver_approved_' + phone);
-              setOnboardingComplete(done === 'true');
-              setDriverApproved(phone === '699000001' || approved === 'true');
+              const isTestDriver = phone === '699000001';
+              setOnboardingComplete(isTestDriver || done === 'true');
+              setDriverApproved(isTestDriver || approved === 'true');
               setUserRole('driver');
             }} style={dr.switchBtn}>
             <Text style={dr.switchBtnText}>{fr?'🚗 Chauffeur':'🚗 Driver'}</Text>
@@ -2265,7 +2267,7 @@ export default function App() {
                 nestedScrollEnabled={true}
                 keyboardShouldPersistTaps="handled"
                 styles={{
-                  textInput: s.destInput,
+                  textInput: {...s.destInput, fontFamily: undefined, fontSize: 15, color: '#333'},
                   listView: {backgroundColor:'#fff', borderRadius:12, marginTop:4, elevation:5, shadowColor:'#000', shadowOpacity:0.1, shadowRadius:8},
                   row: {padding:14, borderBottomWidth:1, borderBottomColor:'#F0F0F0'},
                   description: {fontSize:14, color:'#333'},
