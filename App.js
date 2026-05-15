@@ -196,8 +196,263 @@ function TimePicker({visible,onClose,onSelect,selectedTime,lang}){
   );
 }
 
+
+// ─── DRIVER ONBOARDING ──────────────────────────────────────
+function DriverOnboarding({phone, lang, onComplete}) {
+  const fr = lang === 'fr';
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState('');
+  const [cni, setCni] = useState('');
+  const [plate, setPlate] = useState('');
+  const [vehicle, setVehicle] = useState('moto');
+  const [photo, setPhoto] = useState(null);
+  const [cniPhoto, setCniPhoto] = useState(null);
+  const [licensePhoto, setLicensePhoto] = useState(null);
+  const [vehiclePhoto, setVehiclePhoto] = useState(null);
+  const [paymentPhoto, setPaymentPhoto] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [referralCode, setReferralCode] = useState('');
+
+  const pickImage = async (setter) => {
+    const {status} = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return Alert.alert(fr?'Permission refusée':'Permission denied');
+    const result = await ImagePicker.launchImageLibraryAsync({mediaTypes:ImagePicker.MediaTypeOptions.Images,allowsEditing:true,quality:0.7});
+    if (!result.canceled) setter(result.assets[0].uri);
+  };
+
+  const takePhoto = async (setter) => {
+    const {status} = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') return Alert.alert(fr?'Permission refusée':'Permission denied');
+    const result = await ImagePicker.launchCameraAsync({allowsEditing:true,quality:0.7});
+    if (!result.canceled) setter(result.assets[0].uri);
+  };
+
+  const photoPickerAlert = (setter) => {
+    Alert.alert(fr?'Ajouter une photo':'Add photo', '', [
+      {text: fr?'Prendre une photo':'Take photo', onPress:()=>takePhoto(setter)},
+      {text: fr?'Choisir depuis la galerie':'Choose from gallery', onPress:()=>pickImage(setter)},
+      {text: fr?'Annuler':'Cancel', style:'cancel'},
+    ]);
+  };
+
+  if (submitted) return (
+    <View style={[s.container,{justifyContent:'center',alignItems:'center',padding:32}]}>
+      <Text style={{fontSize:60,marginBottom:24}}>⏳</Text>
+      <Text style={{fontSize:24,fontWeight:'800',color:'#fff',textAlign:'center',marginBottom:12}}>
+        {fr?'Candidature envoyée !':'Application submitted!'}
+      </Text>
+      <Text style={{fontSize:15,color:'rgba(255,255,255,0.8)',textAlign:'center',marginBottom:32,lineHeight:24}}>
+        {fr?'Notre équipe va vérifier vos informations sous 24-48h. Vous recevrez un SMS de confirmation.':'Our team will verify your information within 24-48h. You will receive a confirmation SMS.'}
+      </Text>
+      <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:20,width:'100%',marginBottom:24}}>
+        <Text style={{color:'#fff',fontWeight:'700',fontSize:15,marginBottom:8}}>📋 {fr?'Récapitulatif':'Summary'}</Text>
+        <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13}}>👤 {name}</Text>
+        <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>📱 +237 {phone}</Text>
+        <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>{vehicle==='moto'?'🏍️':vehicle==='economie'?'🚗':'🚙'} {plate}</Text>
+        <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>🪪 CNI: {cni}</Text>
+        {referralCode ? <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>🎁 {fr?'Parrainé par':'Referred by'}: {referralCode}</Text> : null}
+      </View>
+      <TouchableOpacity style={{backgroundColor:'#fff',borderRadius:16,padding:16,width:'100%',alignItems:'center'}} onPress={onComplete}>
+        <Text style={{color:'#1B6B4A',fontWeight:'800',fontSize:16}}>{fr?'Accéder à mon espace chauffeur':'Go to my driver space'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  return (
+    <View style={s.container}>
+      <ScrollView contentContainerStyle={{padding:24,paddingTop:60,paddingBottom:40}} keyboardShouldPersistTaps="handled">
+        {/* Header */}
+        <Text style={{fontSize:22,fontWeight:'800',color:'#fff',marginBottom:4}}>
+          {step===1?(fr?'Bienvenue chez KribiGo 🚗':'Welcome to KribiGo 🚗'):
+           step===2?(fr?'Informations personnelles':'Personal information'):
+           step===3?(fr?'Votre véhicule':'Your vehicle'):
+           step===4?(fr?'Vos documents':'Your documents'):
+           (fr?'Paiement & confirmation':'Payment & confirmation')}
+        </Text>
+        {/* Progress dots */}
+        <View style={{flexDirection:'row',gap:6,marginBottom:28,marginTop:8}}>
+          {[1,2,3,4,5].map(i=>(
+            <View key={i} style={{height:4,flex:1,borderRadius:2,backgroundColor:i<=step?'#fff':'rgba(255,255,255,0.3)'}}/>
+          ))}
+        </View>
+
+        {/* STEP 1 — Welcome */}
+        {step===1&&(
+          <View>
+            <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:20,marginBottom:16}}>
+              <Text style={{color:'#fff',fontSize:16,fontWeight:'800',marginBottom:12}}>🎯 {fr?'Comment ça marche ?':'How it works?'}</Text>
+              {[
+                {icon:'📱',text:fr?'Recevez des courses sur votre téléphone':'Receive ride requests on your phone'},
+                {icon:'💰',text:fr?"Gagnez de l'argent à votre rythme":'Earn money at your own pace'},
+                {icon:'⭐',text:fr?'Montez en grade : Bronze → Diamant':'Level up: Bronze → Diamond'},
+                {icon:'🎁',text:fr?'Bonus de parrainage : 10,000 XAF':'Referral bonus: 10,000 XAF'},
+              ].map((item,i)=>(
+                <View key={i} style={{flexDirection:'row',alignItems:'center',marginBottom:10}}>
+                  <Text style={{fontSize:20,marginRight:12}}>{item.icon}</Text>
+                  <Text style={{color:'rgba(255,255,255,0.9)',fontSize:14,flex:1}}>{item.text}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:20,marginBottom:24}}>
+              <Text style={{color:'#fff',fontSize:15,fontWeight:'800',marginBottom:12}}>💎 {fr?'Niveaux de commission':'Commission tiers'}</Text>
+              {[
+                {icon:'🥉',name:'Bronze',trips:'0-99',pct:'15%'},
+                {icon:'🥈',name:fr?'Argent':'Silver',trips:'100-199',pct:'12%'},
+                {icon:'🥇',name:fr?'Or':'Gold',trips:'200-499',pct:'10%'},
+                {icon:'💎',name:fr?'Diamant':'Diamond',trips:'500+',pct:'8%'},
+              ].map((t,i)=>(
+                <View key={i} style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                  <Text style={{fontSize:18}}>{t.icon}</Text>
+                  <Text style={{color:'#fff',fontWeight:'700',flex:1,marginLeft:8}}>{t.name}</Text>
+                  <Text style={{color:'rgba(255,255,255,0.7)',fontSize:13}}>{t.trips} {fr?'courses':'trips'}</Text>
+                  <Text style={{color:'#F4A827',fontWeight:'800',marginLeft:12}}>{t.pct}</Text>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity style={{backgroundColor:'#fff',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(2)}>
+              <Text style={{color:'#1B6B4A',fontWeight:'800',fontSize:16}}>{fr?'Commencer mon inscription':'Start registration'} →</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* STEP 2 — Personal info */}
+        {step===2&&(
+          <View>
+            <Text style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:20}}>{fr?'Ces informations sont confidentielles et sécurisées.':'This information is confidential and secure.'}</Text>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?'Nom complet *':'Full name *'}</Text>
+            <TextInput style={{backgroundColor:'#fff',borderRadius:12,padding:14,fontSize:15,marginBottom:16}} placeholder={fr?'Ex: Jean-Pierre Manga':'Ex: Jean-Pierre Manga'} placeholderTextColor="#999" value={name} onChangeText={setName}/>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?'Numéro CNI *':'CNI number *'}</Text>
+            <TextInput style={{backgroundColor:'#fff',borderRadius:12,padding:14,fontSize:15,marginBottom:16}} placeholder="Ex: 123456789" placeholderTextColor="#999" value={cni} onChangeText={setCni} keyboardType="number-pad"/>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?'Code de parrainage':'Referral code'} <Text style={{color:'rgba(255,255,255,0.5)',fontWeight:'400'}}>{fr?'(optionnel)':'(optional)'}</Text></Text>
+            <TextInput style={{backgroundColor:'#fff',borderRadius:12,padding:14,fontSize:15,marginBottom:16}} placeholder="Ex: KRIBI-AB12" placeholderTextColor="#999" value={referralCode} onChangeText={v=>setReferralCode(v.toUpperCase())} autoCapitalize="characters"/>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?'Photo de profil *':'Profile photo *'}</Text>
+            <TouchableOpacity onPress={()=>photoPickerAlert(setPhoto)} style={{backgroundColor: photo?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.2)',borderRadius:12,padding:16,alignItems:'center',marginBottom:24,borderWidth:photo?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed'}}>
+              {photo ? <Image source={{uri:photo}} style={{width:80,height:80,borderRadius:40}}/> : <><Text style={{fontSize:32}}>📷</Text><Text style={{color:'#fff',marginTop:8}}>{fr?'Ajouter votre photo':'Add your photo'}</Text></>}
+            </TouchableOpacity>
+            <View style={{flexDirection:'row',gap:12}}>
+              <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(1)}>
+                <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{flex:2,backgroundColor: name&&cni&&photo?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{if(!name||!cni||!photo){Alert.alert(fr?'Champs requis':'Required fields',fr?'Veuillez remplir tous les champs':'Please fill all fields');return;}setStep(3);}}>
+                <Text style={{color: name&&cni&&photo?'#1B6B4A':'rgba(255,255,255,0.5)',fontWeight:'800'}}>{fr?'Continuer':'Continue'} →</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STEP 3 — Vehicle */}
+        {step===3&&(
+          <View>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:12}}>{fr?'Type de véhicule *':'Vehicle type *'}</Text>
+            <View style={{flexDirection:'row',gap:10,marginBottom:20}}>
+              {[{id:'moto',icon:'🏍️',label:'Moto'},{id:'economie',icon:'🚗',label:'Économie'},{id:'confort',icon:'🚙',label:'Confort'}].map(v=>(
+                <TouchableOpacity key={v.id} onPress={()=>setVehicle(v.id)} style={{flex:1,padding:12,borderRadius:12,alignItems:'center',borderWidth:2,borderColor:vehicle===v.id?'#fff':'rgba(255,255,255,0.3)',backgroundColor:vehicle===v.id?'rgba(255,255,255,0.2)':'transparent'}}>
+                  <Text style={{fontSize:24}}>{v.icon}</Text>
+                  <Text style={{color:'#fff',fontSize:12,fontWeight:vehicle===v.id?'800':'400',marginTop:4}}>{v.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?"Plaque d'immatriculation *":'License plate *'}</Text>
+            <TextInput style={{backgroundColor:'#fff',borderRadius:12,padding:14,fontSize:15,marginBottom:16}} placeholder="Ex: LT 1234 A" placeholderTextColor="#999" value={plate} onChangeText={setPlate} autoCapitalize="characters"/>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?"Photo du véhicule *":'Vehicle photo *'}</Text>
+            <TouchableOpacity onPress={()=>photoPickerAlert(setVehiclePhoto)} style={{backgroundColor: vehiclePhoto?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.2)',borderRadius:12,padding:16,alignItems:'center',marginBottom:24,borderWidth:vehiclePhoto?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed'}}>
+              {vehiclePhoto ? <Image source={{uri:vehiclePhoto}} style={{width:'100%',height:120,borderRadius:12}}/> : <><Text style={{fontSize:32}}>🚗</Text><Text style={{color:'#fff',marginTop:8}}>{fr?'Photo du véhicule':'Vehicle photo'}</Text></>}
+            </TouchableOpacity>
+            <View style={{flexDirection:'row',gap:12}}>
+              <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(2)}>
+                <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{flex:2,backgroundColor: plate&&vehiclePhoto?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{if(!plate||!vehiclePhoto){Alert.alert(fr?'Champs requis':'Required',fr?'Veuillez remplir tous les champs':'Please fill all fields');return;}setStep(4);}}>
+                <Text style={{color: plate&&vehiclePhoto?'#1B6B4A':'rgba(255,255,255,0.5)',fontWeight:'800'}}>{fr?'Continuer':'Continue'} →</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STEP 4 — Documents */}
+        {step===4&&(
+          <View>
+            <Text style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:20}}>{fr?'Prenez des photos claires de vos documents.':'Take clear photos of your documents.'}</Text>
+            {[
+              {label:fr?'Photo recto de votre CNI *':'CNI front photo *', icon:'🪪', state:cniPhoto, setter:setCniPhoto},
+              {label:fr?'Photo de votre permis de conduire *':"Driver's license photo *", icon:'📄', state:licensePhoto, setter:setLicensePhoto},
+            ].map((doc,i)=>(
+              <View key={i} style={{marginBottom:20}}>
+                <Text style={{color:'#fff',fontWeight:'700',marginBottom:8}}>{doc.label}</Text>
+                <TouchableOpacity onPress={()=>photoPickerAlert(doc.setter)} style={{backgroundColor: doc.state?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.2)',borderRadius:12,padding:16,alignItems:'center',borderWidth:doc.state?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed'}}>
+                  {doc.state ? <Image source={{uri:doc.state}} style={{width:'100%',height:100,borderRadius:8}}/> : <><Text style={{fontSize:28}}>{doc.icon}</Text><Text style={{color:'#fff',marginTop:6,fontSize:13}}>{fr?'Appuyer pour ajouter':'Tap to add'}</Text></>}
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={{flexDirection:'row',gap:12,marginTop:8}}>
+              <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(3)}>
+                <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{flex:2,backgroundColor: cniPhoto&&licensePhoto?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{if(!cniPhoto||!licensePhoto){Alert.alert(fr?'Documents requis':'Documents required',fr?'Veuillez ajouter tous les documents':'Please add all documents');return;}setStep(5);}}>
+                <Text style={{color: cniPhoto&&licensePhoto?'#1B6B4A':'rgba(255,255,255,0.5)',fontWeight:'800'}}>{fr?'Continuer':'Continue'} →</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* STEP 5 — Payment */}
+        {step===5&&(
+          <View>
+            <View style={{backgroundColor:'#F4A827',borderRadius:16,padding:20,marginBottom:20}}>
+              <Text style={{fontSize:18,fontWeight:'800',color:'#fff',marginBottom:4}}>💳 {fr?"Frais d'inscription":'Registration fee'}</Text>
+              <Text style={{fontSize:32,fontWeight:'800',color:'#fff'}}>5,000 XAF</Text>
+              <Text style={{fontSize:13,color:'rgba(255,255,255,0.85)',marginTop:4}}>{fr?'Paiement unique — non remboursable':'One-time payment — non-refundable'}</Text>
+            </View>
+            <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:20,marginBottom:20}}>
+              <Text style={{color:'#fff',fontWeight:'800',fontSize:15,marginBottom:12}}>📲 {fr?"Instructions de paiement":'Payment instructions'}</Text>
+              {[
+                {icon:'1️⃣', text: fr?'Ouvrez MTN MoMo ou Orange Money':'Open MTN MoMo or Orange Money'},
+                {icon:'2️⃣', text: fr?"Envoyez 5,000 XAF au +237 6XX XXX XXX":'Send 5,000 XAF to +237 6XX XXX XXX'},
+                {icon:'3️⃣', text: fr?("Motif : 'KribiGo " + name + "'"):("Reference: 'KribiGo " + name + "'")},
+                {icon:'4️⃣', text: fr?"Prenez une capture d'écran de la confirmation":'Take a screenshot of the confirmation'},
+              ].map((item,i)=>(
+                <View key={i} style={{flexDirection:'row',marginBottom:10}}>
+                  <Text style={{fontSize:18,marginRight:10}}>{item.icon}</Text>
+                  <Text style={{color:'rgba(255,255,255,0.9)',flex:1,fontSize:13,lineHeight:20}}>{item.text}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:8}}>{fr?"Capture d'écran du paiement *":'Payment screenshot *'}</Text>
+            <TouchableOpacity onPress={()=>photoPickerAlert(setPaymentPhoto)} style={{backgroundColor: paymentPhoto?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.2)',borderRadius:12,padding:16,alignItems:'center',marginBottom:24,borderWidth:paymentPhoto?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed'}}>
+              {paymentPhoto ? <Image source={{uri:paymentPhoto}} style={{width:'100%',height:150,borderRadius:12}}/> : <><Text style={{fontSize:32}}>📸</Text><Text style={{color:'#fff',marginTop:8}}>{fr?"Ajouter la capture d'écran":'Add the screenshot'}</Text></>}
+            </TouchableOpacity>
+            {/* Summary */}
+            <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:16,marginBottom:20}}>
+              <Text style={{color:'#fff',fontWeight:'800',marginBottom:10}}>📋 {fr?'Récapitulatif':'Summary'}</Text>
+              <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13}}>👤 {name} • 🪪 {cni}</Text>
+              <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>{vehicle==='moto'?'🏍️':vehicle==='economie'?'🚗':'🚙'} {vehicle} • {plate}</Text>
+              <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>📱 +237 {phone}</Text>
+            </View>
+            <View style={{flexDirection:'row',gap:12}}>
+              <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(4)}>
+                <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{flex:2,backgroundColor: paymentPhoto?'#F4A827':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={async()=>{
+                if(!paymentPhoto){Alert.alert(fr?"Paiement requis":'Payment required',fr?"Veuillez ajouter la capture d'écran du paiement":'Please add the payment screenshot');return;}
+                // Generate referral code here where 'name' is in scope
+                const initials = (name||phone).replace(/[^A-Za-z]/g,'').substring(0,2).toUpperCase() || 'KG';
+                const suffix = phone.slice(-4);
+                const myCode = 'KRIBI-' + initials + suffix;
+                await SecureStore.setItemAsync('kribigo_driver_referral_code', myCode);
+                setSubmitted(true);
+              }}>
+                <Text style={{color: paymentPhoto?'#fff':'rgba(255,255,255,0.5)',fontWeight:'800'}}>✅ {fr?'Soumettre ma candidature':'Submit application'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── DRIVER HOME SCREEN ────────────────────────────────────
-function DriverHome({phone, lang, onSwitchRole}){
+function DriverHome({phone, lang, onSwitchRole, onLogout}){
   const fr = lang === 'fr';
   const [isOnline, setIsOnline] = useState(false);
   const [hasRequest, setHasRequest] = useState(false);
@@ -213,6 +468,7 @@ function DriverHome({phone, lang, onSwitchRole}){
   const [driverName, setDriverName] = useState('');
   const [driverPhoto, setDriverPhoto] = useState(null);
   const [driverVehicle, setDriverVehicle] = useState('moto');
+  const [myReferralCode, setMyReferralCode] = useState('');
   const [driverPlate, setDriverPlate] = useState('');
   const [driverIdNumber, setDriverIdNumber] = useState('');
   const [driverTotalTrips, setDriverTotalTrips] = useState(67);
@@ -241,6 +497,8 @@ function DriverHome({phone, lang, onSwitchRole}){
       if (t) setDriverTotalTrips(parseInt(t));
       if (pl) setDriverPlate(pl);
       if (id) setDriverIdNumber(id);
+      const rc = await SecureStore.getItemAsync('kribigo_driver_referral_code');
+      if (rc) setMyReferralCode(rc);
     })();
   }, []);
   React.useEffect(() => {
@@ -688,6 +946,15 @@ function DriverHome({phone, lang, onSwitchRole}){
               <View style={dr.tierBar}><View style={[dr.tierBarFill,{width:pct+'%'}]}/></View>
             </View>}
           </View>);})()} 
+          {myReferralCode ? (
+            <View style={{backgroundColor:'#F0F7F4',borderRadius:16,padding:16,marginTop:16}}>
+              <Text style={{fontSize:13,fontWeight:'700',color:'#1B6B4A',marginBottom:8}}>🎁 {fr?'Mon code de parrainage':'My referral code'}</Text>
+              <View style={{backgroundColor:'#fff',borderRadius:12,padding:14,alignItems:'center',borderWidth:2,borderColor:'#1B6B4A'}}>
+                <Text style={{fontSize:22,fontWeight:'800',color:'#1B6B4A',letterSpacing:2}}>{myReferralCode}</Text>
+              </View>
+              <Text style={{fontSize:12,color:'#666',marginTop:8,textAlign:'center'}}>{fr?"Partagez ce code avec d'autres chauffeurs. Vous recevrez 10,000 XAF après leur 10ème course.":"Share this code with other drivers. You'll receive 10,000 XAF after their 10th trip."}</Text>
+            </View>
+          ) : null}
           <TouchableOpacity style={{backgroundColor:'#1B6B4A',borderRadius:12,padding:14,alignItems:'center',marginTop:16}} onPress={async()=>{
             await SecureStore.setItemAsync('kribigo_driver_name', driverName);
             await SecureStore.setItemAsync('kribigo_driver_plate', driverPlate);
@@ -699,6 +966,26 @@ function DriverHome({phone, lang, onSwitchRole}){
           </TouchableOpacity>
           <TouchableOpacity style={[dr.switchBtn,{marginTop:12}]} onPress={onSwitchRole}>
             <Text style={dr.switchBtnText}>{fr?'🧑 Passer en mode Passager':'🧑 Switch to Rider mode'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{backgroundColor:'#FFEBEE',borderRadius:14,padding:14,alignItems:'center',marginTop:10}} onPress={()=>{
+            Alert.alert(
+              fr?'Se déconnecter':'Log out',
+              fr?'Voulez-vous vraiment vous déconnecter ?':'Are you sure you want to log out?',
+              [
+                {text:fr?'Annuler':'Cancel', style:'cancel'},
+                {text:fr?'Se déconnecter':'Log out', style:'destructive', onPress: onLogout}
+              ]
+            );
+          }}>
+            <Text style={{color:'#C62828',fontWeight:'700',fontSize:15}}>🚪 {fr?'Se déconnecter':'Log out'}</Text>
+          </TouchableOpacity>
+          {/* Dev only: reset onboarding for testing */}
+          <TouchableOpacity style={{marginTop:8,padding:10,alignItems:'center'}} onPress={async()=>{
+            const SecureStore = require('expo-secure-store');
+            await SecureStore.deleteItemAsync('kribigo_driver_onboarding_complete');
+            Alert.alert('✅', 'Onboarding reset! Log out and back in to test.');
+          }}>
+            <Text style={{color:'rgba(255,255,255,0.3)',fontSize:11}}>🔧 Reset onboarding (dev)</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -892,12 +1179,26 @@ export default function App() {
   }, []);
 
   const handleRoleSelect = async (r) => {
-    await saveToken(token);
-    await savePhone(phone);
-    await saveRole(r);
-    if (userId) await saveUserId(userId);
-    setUserRole(r);
-    setScreen('home');
+    try {
+      await persistLogin(token, phone, r, userId);
+      setUserRole(r);
+      if (r === 'driver') {
+        const done = await SecureStore.getItemAsync('kribigo_driver_onboarding_complete');
+        setOnboardingComplete(done === 'true');
+        // Test driver 699000001 is always pre-approved
+        const approved = await SecureStore.getItemAsync('kribigo_driver_approved');
+        setDriverApproved(phone === '699000001' || approved === 'true');
+      } else {
+        setOnboardingComplete(true);
+      }
+      setScreen('home');
+    } catch(e) {
+      console.error('handleRoleSelect error:', e);
+      // Fallback — still navigate
+      setUserRole(r);
+      setOnboardingComplete(true);
+      setScreen('home');
+    }
   };
 
   // Listen for driver en route (rider mode)
@@ -968,6 +1269,8 @@ export default function App() {
   const [etaMinutes, setEtaMinutes] = useState(5);
   const [showRating, setShowRating] = useState(false);
   const [userRating, setUserRating] = useState(0);
+  const [onboardingComplete, setOnboardingComplete] = useState(null);
+  const [driverApproved, setDriverApproved] = useState(null); // null=loading, false=needed, true=done
   const [ratingComment, setRatingComment] = useState('');
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
@@ -1219,7 +1522,61 @@ export default function App() {
 
   if(screen==='role') return <RoleSelector phone={phone} lang={lang} onSelect={handleRoleSelect}/>;
 
-  if(userRole==='driver') return <DriverHome phone={phone} lang={lang} onSwitchRole={()=>setUserRole('rider')}/>;
+  if(userRole==='driver') {
+    if (onboardingComplete === false) return <DriverOnboarding phone={phone} lang={lang} onComplete={async()=>{
+      await SecureStore.setItemAsync('kribigo_driver_onboarding_complete','true');
+      setOnboardingComplete(true);
+    }}/>;
+    if (onboardingComplete === null) {
+      SecureStore.getItemAsync('kribigo_driver_onboarding_complete').then(done => {
+        setOnboardingComplete(done === 'true');
+      });
+      return <View style={[s.container,{justifyContent:'center',alignItems:'center'}]}><ActivityIndicator color="#fff"/></View>;
+    }
+    // Show pending screen if not yet approved
+    if (onboardingComplete === true && !driverApproved) {
+      return (
+        <View style={[s.container,{justifyContent:'center',alignItems:'center',padding:32}]}>
+          <Text style={{fontSize:64,marginBottom:24}}>⏳</Text>
+          <Text style={{fontSize:24,fontWeight:'800',color:'#fff',textAlign:'center',marginBottom:12}}>
+            {fr?'Vérification en cours...':'Verification in progress...'}
+          </Text>
+          <Text style={{fontSize:15,color:'rgba(255,255,255,0.8)',textAlign:'center',marginBottom:32,lineHeight:24}}>
+            {fr?'Notre équipe examine votre dossier. Vous recevrez un SMS dès que votre compte sera activé (24-48h).':'Our team is reviewing your application. You will receive an SMS once your account is activated (24-48h).'}
+          </Text>
+          <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:20,width:'100%',marginBottom:24}}>
+            <Text style={{color:'#fff',fontWeight:'700',marginBottom:12}}>📋 {fr?'Statut de votre dossier':'Application status'}</Text>
+            <View style={{flexDirection:'row',alignItems:'center',marginBottom:10}}>
+              <Text style={{fontSize:18,marginRight:10}}>✅</Text>
+              <Text style={{color:'rgba(255,255,255,0.9)',fontSize:14}}>{fr?'Dossier soumis':'Application submitted'}</Text>
+            </View>
+            <View style={{flexDirection:'row',alignItems:'center',marginBottom:10}}>
+              <Text style={{fontSize:18,marginRight:10}}>⏳</Text>
+              <Text style={{color:'rgba(255,255,255,0.9)',fontSize:14}}>{fr?'Vérification des documents':'Document verification'}</Text>
+            </View>
+            <View style={{flexDirection:'row',alignItems:'center'}}>
+              <Text style={{fontSize:18,marginRight:10}}>🔒</Text>
+              <Text style={{color:'rgba(255,255,255,0.6)',fontSize:14}}>{fr?'Activation du compte':'Account activation'}</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={{backgroundColor:'rgba(255,255,255,0.15)',borderRadius:14,padding:14,width:'100%',alignItems:'center',marginBottom:10}} onPress={async()=>{
+            const approved = await SecureStore.getItemAsync('kribigo_driver_approved');
+            if (approved === 'true') {
+              setDriverApproved(true);
+            } else {
+              Alert.alert(fr?'Pas encore':'Not yet', fr?'Votre dossier est en cours de vérification.':'Your application is still being reviewed.');
+            }
+          }}>
+            <Text style={{color:'#fff',fontWeight:'700'}}>🔄 {fr?'Vérifier le statut':'Check status'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{padding:12}} onPress={handleLogout}>
+            <Text style={{color:'rgba(255,255,255,0.5)',fontSize:13}}>🚪 {fr?'Se déconnecter':'Log out'}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return <DriverHome phone={phone} lang={lang} onSwitchRole={()=>setUserRole('rider')} onLogout={handleLogout}/>;
+  }
 
   if(showSuccess&&bookedRide) return(
     <View style={s.container}>
