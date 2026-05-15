@@ -50,6 +50,7 @@ const KRIBI_SPOTS = [
   { icon: '⛵', name: 'Kribi Marina',               lat: 2.9340, lng: 9.9100 },
   { icon: '💆', name: 'Elabi Pool & Spa',           lat: 2.9260, lng: 9.9120 },
   { icon: '🏨', name: 'Angelina Hotel Kribi',       lat: 2.9330, lng: 9.9090 },
+  { icon: '🏨', name: 'Hôtel Les Gîtes de Kribi',    lat: 2.9275, lng: 9.9135 },
 ];
 
 // ─── PRICING CONFIG ────────────────────────────────────────
@@ -198,7 +199,7 @@ function TimePicker({visible,onClose,onSelect,selectedTime,lang}){
 
 
 // ─── DRIVER ONBOARDING ──────────────────────────────────────
-function DriverOnboarding({phone, lang, onComplete}) {
+function DriverOnboarding({phone, lang, onComplete, onBack}) {
   const fr = lang === 'fr';
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
@@ -207,8 +208,12 @@ function DriverOnboarding({phone, lang, onComplete}) {
   const [vehicle, setVehicle] = useState('moto');
   const [photo, setPhoto] = useState(null);
   const [cniPhoto, setCniPhoto] = useState(null);
+  const [cniPhotoVerso, setCniPhotoVerso] = useState(null);
   const [licensePhoto, setLicensePhoto] = useState(null);
   const [vehiclePhoto, setVehiclePhoto] = useState(null);
+  const [vehiclePhoto2, setVehiclePhoto2] = useState(null);
+  const [vehiclePhotoInt1, setVehiclePhotoInt1] = useState(null);
+  const [vehiclePhotoInt2, setVehiclePhotoInt2] = useState(null);
   const [paymentPhoto, setPaymentPhoto] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [referralCode, setReferralCode] = useState('');
@@ -309,6 +314,9 @@ function DriverOnboarding({phone, lang, onComplete}) {
                 </View>
               ))}
             </View>
+            <TouchableOpacity style={{backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:14,alignItems:'center',marginBottom:10}} onPress={onBack}>
+              <Text style={{color:'#fff',fontWeight:'600',fontSize:14}}>← {fr?'Choisir un autre rôle':'Choose a different role'}</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={{backgroundColor:'#fff',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(2)}>
               <Text style={{color:'#1B6B4A',fontWeight:'800',fontSize:16}}>{fr?'Commencer mon inscription':'Start registration'} →</Text>
             </TouchableOpacity>
@@ -354,15 +362,47 @@ function DriverOnboarding({phone, lang, onComplete}) {
             </View>
             <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?"Plaque d'immatriculation *":'License plate *'}</Text>
             <TextInput style={{backgroundColor:'#fff',borderRadius:12,padding:14,fontSize:15,marginBottom:16}} placeholder="Ex: LT 1234 A" placeholderTextColor="#999" value={plate} onChangeText={setPlate} autoCapitalize="characters"/>
-            <Text style={{color:'#fff',fontWeight:'700',marginBottom:6}}>{fr?"Photo du véhicule *":'Vehicle photo *'}</Text>
-            <TouchableOpacity onPress={()=>photoPickerAlert(setVehiclePhoto)} style={{backgroundColor: vehiclePhoto?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.2)',borderRadius:12,padding:16,alignItems:'center',marginBottom:24,borderWidth:vehiclePhoto?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed'}}>
-              {vehiclePhoto ? <Image source={{uri:vehiclePhoto}} style={{width:'100%',height:120,borderRadius:12}}/> : <><Text style={{fontSize:32}}>🚗</Text><Text style={{color:'#fff',marginTop:8}}>{fr?'Photo du véhicule':'Vehicle photo'}</Text></>}
-            </TouchableOpacity>
+            {vehicle === 'moto' ? (
+              <View style={{marginBottom:16}}>
+                <Text style={{color:'#fff',fontWeight:'700',marginBottom:4}}>{fr?'Photos de la moto * (2 requises)':'Moto photos * (2 required)'}</Text>
+                <Text style={{color:'rgba(255,255,255,0.6)',fontSize:12,marginBottom:10}}>{fr?'1 plaque + 1 corps':'1 license plate + 1 body'}</Text>
+                <View style={{flexDirection:'row',gap:8}}>
+                  {[{label:fr?'Plaque':'Plate',state:vehiclePhoto,setter:setVehiclePhoto},{label:fr?'Corps':'Body',state:vehiclePhoto2,setter:setVehiclePhoto2}].map((p,i)=>(
+                    <TouchableOpacity key={i} onPress={()=>photoPickerAlert(p.setter)} style={{flex:1,backgroundColor:p.state?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.1)',borderRadius:12,padding:12,alignItems:'center',borderWidth:p.state?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed',minHeight:100}}>
+                      {p.state?<Image source={{uri:p.state}} style={{width:'100%',height:70,borderRadius:8}}/>:<><Text style={{fontSize:28}}>📷</Text><Text style={{color:'#fff',fontSize:11,marginTop:6,textAlign:'center'}}>{p.label}</Text></>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <View style={{marginBottom:16}}>
+                <Text style={{color:'#fff',fontWeight:'700',marginBottom:4}}>{fr?'Photos du véhicule * (4 requises)':'Vehicle photos * (4 required)'}</Text>
+                <Text style={{color:'rgba(255,255,255,0.6)',fontSize:12,marginBottom:10}}>{fr?'2 extérieur (plaque + corps) + 2 intérieur':'2 exterior (plate + body) + 2 interior'}</Text>
+                <View style={{flexDirection:'row',gap:8,marginBottom:8}}>
+                  {[{label:fr?'Ext. Plaque':'Ext. Plate',state:vehiclePhoto,setter:setVehiclePhoto},{label:fr?'Ext. Corps':'Ext. Body',state:vehiclePhoto2,setter:setVehiclePhoto2}].map((p,i)=>(
+                    <TouchableOpacity key={i} onPress={()=>photoPickerAlert(p.setter)} style={{flex:1,backgroundColor:p.state?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.1)',borderRadius:12,padding:12,alignItems:'center',borderWidth:p.state?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed',minHeight:100}}>
+                      {p.state?<Image source={{uri:p.state}} style={{width:'100%',height:70,borderRadius:8}}/>:<><Text style={{fontSize:28}}>📷</Text><Text style={{color:'#fff',fontSize:11,marginTop:6,textAlign:'center'}}>{p.label}</Text></>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{flexDirection:'row',gap:8}}>
+                  {[{label:fr?'Int. Avant':'Int. Front',state:vehiclePhotoInt1,setter:setVehiclePhotoInt1},{label:fr?'Int. Arrière':'Int. Back',state:vehiclePhotoInt2,setter:setVehiclePhotoInt2}].map((p,i)=>(
+                    <TouchableOpacity key={i} onPress={()=>photoPickerAlert(p.setter)} style={{flex:1,backgroundColor:p.state?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.1)',borderRadius:12,padding:12,alignItems:'center',borderWidth:p.state?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed',minHeight:100}}>
+                      {p.state?<Image source={{uri:p.state}} style={{width:'100%',height:70,borderRadius:8}}/>:<><Text style={{fontSize:28}}>📷</Text><Text style={{color:'#fff',fontSize:11,marginTop:6,textAlign:'center'}}>{p.label}</Text></>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
             <View style={{flexDirection:'row',gap:12}}>
               <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(2)}>
                 <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{flex:2,backgroundColor: plate&&vehiclePhoto?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{if(!plate||!vehiclePhoto){Alert.alert(fr?'Champs requis':'Required',fr?'Veuillez remplir tous les champs':'Please fill all fields');return;}setStep(4);}}>
+              <TouchableOpacity style={{flex:2,backgroundColor: plate&&vehiclePhoto?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{const motoOk = vehicle==='moto' && vehiclePhoto && vehiclePhoto2;
+                const carOk = vehicle!=='moto' && vehiclePhoto && vehiclePhoto2 && vehiclePhotoInt1 && vehiclePhotoInt2;
+                if(!plate){Alert.alert(fr?'Plaque requise':'Plate required',fr?'Entrez la plaque':'Enter plate');return;}
+                if(!motoOk && !carOk){Alert.alert(fr?'Photos requises':'Photos required',fr?vehicle==='moto'?'Ajoutez les 2 photos':'Ajoutez les 4 photos':vehicle==='moto'?'Add 2 photos':'Add all 4 photos');return;}
+                setStep(4);}}>
                 <Text style={{color: plate&&vehiclePhoto?'#1B6B4A':'rgba(255,255,255,0.5)',fontWeight:'800'}}>{fr?'Continuer':'Continue'} →</Text>
               </TouchableOpacity>
             </View>
@@ -395,21 +435,21 @@ function DriverOnboarding({phone, lang, onComplete}) {
           </View>
         )}
 
-        {/* STEP 5 — Payment */}
+        {/* STEP 5 — Confirmation */}
         {step===5&&(
           <View>
-            <View style={{backgroundColor:'#F4A827',borderRadius:16,padding:20,marginBottom:20}}>
-              <Text style={{fontSize:18,fontWeight:'800',color:'#fff',marginBottom:4}}>💳 {fr?"Frais d'inscription":'Registration fee'}</Text>
-              <Text style={{fontSize:32,fontWeight:'800',color:'#fff'}}>5,000 XAF</Text>
-              <Text style={{fontSize:13,color:'rgba(255,255,255,0.85)',marginTop:4}}>{fr?'Paiement unique — non remboursable':'One-time payment — non-refundable'}</Text>
+            <View style={{backgroundColor:'#1B6B4A',borderRadius:16,padding:20,marginBottom:20,alignItems:'center'}}>
+              <Text style={{fontSize:40,marginBottom:8}}>🎉</Text>
+              <Text style={{fontSize:20,fontWeight:'800',color:'#fff',textAlign:'center'}}>{fr?'Inscription gratuite !':'Free registration!'}</Text>
+              <Text style={{fontSize:13,color:'rgba(255,255,255,0.85)',marginTop:6,textAlign:'center',lineHeight:20}}>{fr?'Aucun frais pour rejoindre KribiGo. Une fois votre dossier validé, rechargez votre compte pour commencer.':'No fees to join KribiGo. Once approved, recharge your account to get started.'}</Text>
             </View>
             <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:20,marginBottom:20}}>
-              <Text style={{color:'#fff',fontWeight:'800',fontSize:15,marginBottom:12}}>📲 {fr?"Instructions de paiement":'Payment instructions'}</Text>
+              <Text style={{color:'#fff',fontWeight:'800',fontSize:15,marginBottom:12}}>📋 {fr?'Prochaines étapes':'Next steps'}</Text>
               {[
-                {icon:'1️⃣', text: fr?'Ouvrez MTN MoMo ou Orange Money':'Open MTN MoMo or Orange Money'},
-                {icon:'2️⃣', text: fr?"Envoyez 5,000 XAF au +237 6XX XXX XXX":'Send 5,000 XAF to +237 6XX XXX XXX'},
-                {icon:'3️⃣', text: fr?("Motif : 'KribiGo " + name + "'"):("Reference: 'KribiGo " + name + "'")},
-                {icon:'4️⃣', text: fr?"Prenez une capture d'écran de la confirmation":'Take a screenshot of the confirmation'},
+                {icon:'1️⃣', text: fr?'Votre dossier sera vérifié sous 24-48h':'Your application will be reviewed within 24-48h'},
+                {icon:'2️⃣', text: fr?'Vous recevrez un SMS de confirmation':'You will receive a confirmation SMS'},
+                {icon:'3️⃣', text: fr?'Rechargez votre compte (min. 5,000 XAF) via MTN MoMo ou Orange Money':'Recharge your account (min. 5,000 XAF) via MTN MoMo or Orange Money'},
+                {icon:'4️⃣', text: fr?"Commencez à recevoir des courses et gagnez de l'argent !":'Start receiving rides and earning money!'},
               ].map((item,i)=>(
                 <View key={i} style={{flexDirection:'row',marginBottom:10}}>
                   <Text style={{fontSize:18,marginRight:10}}>{item.icon}</Text>
@@ -417,31 +457,26 @@ function DriverOnboarding({phone, lang, onComplete}) {
                 </View>
               ))}
             </View>
-            <Text style={{color:'#fff',fontWeight:'700',marginBottom:8}}>{fr?"Capture d'écran du paiement *":'Payment screenshot *'}</Text>
-            <TouchableOpacity onPress={()=>photoPickerAlert(setPaymentPhoto)} style={{backgroundColor: paymentPhoto?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.2)',borderRadius:12,padding:16,alignItems:'center',marginBottom:24,borderWidth:paymentPhoto?0:2,borderColor:'rgba(255,255,255,0.4)',borderStyle:'dashed'}}>
-              {paymentPhoto ? <Image source={{uri:paymentPhoto}} style={{width:'100%',height:150,borderRadius:12}}/> : <><Text style={{fontSize:32}}>📸</Text><Text style={{color:'#fff',marginTop:8}}>{fr?"Ajouter la capture d'écran":'Add the screenshot'}</Text></>}
-            </TouchableOpacity>
-            {/* Summary */}
             <View style={{backgroundColor:'rgba(255,255,255,0.1)',borderRadius:16,padding:16,marginBottom:20}}>
               <Text style={{color:'#fff',fontWeight:'800',marginBottom:10}}>📋 {fr?'Récapitulatif':'Summary'}</Text>
               <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13}}>👤 {name} • 🪪 {cni}</Text>
               <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>{vehicle==='moto'?'🏍️':vehicle==='economie'?'🚗':'🚙'} {vehicle} • {plate}</Text>
               <Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>📱 +237 {phone}</Text>
+              {referralCode?<Text style={{color:'rgba(255,255,255,0.8)',fontSize:13,marginTop:4}}>🎁 {fr?'Parrainé par':'Referred by'}: {referralCode}</Text>:null}
             </View>
+            <Text style={{color:'rgba(255,255,255,0.6)',fontSize:12,marginBottom:16,textAlign:'center'}}>{fr?"En soumettant, vous acceptez les conditions d'utilisation de KribiGo.":'By submitting, you agree to KribiGo terms of use.'}</Text>
             <View style={{flexDirection:'row',gap:12}}>
               <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(4)}>
                 <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{flex:2,backgroundColor: paymentPhoto?'#F4A827':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={async()=>{
-                if(!paymentPhoto){Alert.alert(fr?"Paiement requis":'Payment required',fr?"Veuillez ajouter la capture d'écran du paiement":'Please add the payment screenshot');return;}
-                // Generate referral code here where 'name' is in scope
+              <TouchableOpacity style={{flex:2,backgroundColor:'#F4A827',borderRadius:16,padding:16,alignItems:'center'}} onPress={async()=>{
                 const initials = (name||phone).replace(/[^A-Za-z]/g,'').substring(0,2).toUpperCase() || 'KG';
                 const suffix = phone.slice(-4);
                 const myCode = 'KRIBI-' + initials + suffix;
                 await SecureStore.setItemAsync('kribigo_driver_referral_code', myCode);
                 setSubmitted(true);
               }}>
-                <Text style={{color: paymentPhoto?'#fff':'rgba(255,255,255,0.5)',fontWeight:'800'}}>✅ {fr?'Soumettre ma candidature':'Submit application'}</Text>
+                <Text style={{color:'#fff',fontWeight:'800'}}>{fr?'Soumettre ma candidature':'Submit application'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -472,6 +507,8 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
   const [driverPlate, setDriverPlate] = useState('');
   const [driverIdNumber, setDriverIdNumber] = useState('');
   const [driverTotalTrips, setDriverTotalTrips] = useState(67);
+  const [driverBalance, setDriverBalance] = useState(0);
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [earningsView, setEarningsView] = useState('week');
   const [driverTrips, setDriverTrips] = useState([
     {id:1, date:"Aujourd'hui 14:32", pickup:'Centre Ville', dest:'Chutes de la Lobé', fare:3200, status:'completed', vehicle:'Moto'},
@@ -497,6 +534,8 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
       if (t) setDriverTotalTrips(parseInt(t));
       if (pl) setDriverPlate(pl);
       if (id) setDriverIdNumber(id);
+      const bal = await SecureStore.getItemAsync('kribigo_driver_balance');
+      if (bal) setDriverBalance(parseInt(bal));
       const rc = await SecureStore.getItemAsync('kribigo_driver_referral_code');
       if (rc) setMyReferralCode(rc);
     })();
@@ -514,6 +553,14 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
 
   // Simulate incoming request after going online
   const toggleOnline = () => {
+    if (!isOnline && driverBalance === 0) {
+      Alert.alert(
+        fr ? '⚠️ Solde insuffisant' : '⚠️ Insufficient balance',
+        fr ? 'Rechargez votre compte pour aller en ligne.' : 'Please recharge your account to go online.',
+        [{text: fr ? 'Recharger' : 'Recharge', onPress: () => setShowRechargeModal(true)}, {text: fr ? 'Annuler' : 'Cancel', style: 'cancel'}]
+      );
+      return;
+    }
     const next = !isOnline;
     setIsOnline(next);
     if (next) {
@@ -712,6 +759,15 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
                       };
                       setDriverTrips(prev => [newTrip, ...prev]);
                       setDriverTotalTrips(prev => prev + 1);
+                      const commissionAmt = Math.round(total * getTier(driverTotalTrips).commission / 100);
+                      const newBalance = Math.max(0, driverBalance - commissionAmt);
+                      setDriverBalance(newBalance);
+                      SecureStore.setItemAsync('kribigo_driver_balance', String(newBalance));
+                      if (newBalance === 0) {
+                        Alert.alert(fr ? '⚠️ Solde épuisé' : '⚠️ Balance empty', fr ? 'Rechargez votre compte pour continuer.' : 'Recharge your account to keep receiving rides.');
+                      } else if (newBalance < 1000) {
+                        Alert.alert(fr ? '⚠️ Solde faible' : '⚠️ Low balance', fr ? ('Solde restant: ' + newBalance.toLocaleString() + ' XAF') : ('Remaining: ' + newBalance.toLocaleString() + ' XAF'));
+                      }
                       setShowEndTripModal(false);
                       setDriverTripStatus(null);
                       setAcceptedTrip(null);
@@ -726,6 +782,49 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
                   </View>
                 );
               })()}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Recharge Modal */}
+        <Modal visible={showRechargeModal} transparent animationType="slide">
+          <View style={s.modalOverlay}>
+            <View style={{backgroundColor:'#fff',borderRadius:24,padding:24,margin:24,width:'90%',alignSelf:'center'}}>
+              <Text style={{fontSize:20,fontWeight:'800',color:'#1a1a1a',marginBottom:4}}>{fr?'Recharger mon compte':'Recharge my account'}</Text>
+              <Text style={{fontSize:13,color:'#666',marginBottom:20}}>{fr?'Solde actuel: ':'Current balance: '}{driverBalance.toLocaleString()} XAF</Text>
+              <View style={{backgroundColor:'#F0F7F4',borderRadius:16,padding:16,marginBottom:16}}>
+                <Text style={{fontSize:14,fontWeight:'700',color:'#1B6B4A',marginBottom:12}}>{fr?'Instructions':'Instructions'}</Text>
+                {[
+                  {icon:'1️⃣', text: fr?'Ouvrez MTN MoMo ou Orange Money':'Open MTN MoMo or Orange Money'},
+                  {icon:'2️⃣', text: fr?'Envoyez le montant au +237 6XX XXX XXX':'Send amount to +237 6XX XXX XXX'},
+                  {icon:'3️⃣', text: fr?'Motif: votre numéro de téléphone':'Reference: your phone number'},
+                  {icon:'4️⃣', text: fr?'Minimum: 5,000 XAF':'Minimum: 5,000 XAF'},
+                ].map((item,i)=>(
+                  <View key={i} style={{flexDirection:'row',marginBottom:8}}>
+                    <Text style={{fontSize:16,marginRight:8}}>{item.icon}</Text>
+                    <Text style={{fontSize:13,color:'#333',flex:1,lineHeight:20}}>{item.text}</Text>
+                  </View>
+                ))}
+              </View>
+              <View style={{flexDirection:'row',gap:10,marginBottom:8}}>
+                {[5000,10000,20000].map(amt=>(
+                  <TouchableOpacity key={amt} style={{flex:1,backgroundColor:'#F0F7F4',borderRadius:12,padding:12,alignItems:'center',borderWidth:2,borderColor:'#1B6B4A'}}
+                    onPress={()=>{
+                      const newBal = driverBalance + amt;
+                      setDriverBalance(newBal);
+                      SecureStore.setItemAsync('kribigo_driver_balance', String(newBal));
+                      setShowRechargeModal(false);
+                      Alert.alert('OK', fr?('Solde rechargé: +' + amt.toLocaleString() + ' XAF. Nouveau solde: ' + newBal.toLocaleString() + ' XAF'):('Balance recharged: +' + amt.toLocaleString() + ' XAF. New balance: ' + newBal.toLocaleString() + ' XAF'));
+                    }}>
+                    <Text style={{fontSize:15,fontWeight:'800',color:'#1B6B4A'}}>{amt.toLocaleString()}</Text>
+                    <Text style={{fontSize:11,color:'#666'}}>XAF</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={{fontSize:11,color:'#999',textAlign:'center',marginBottom:16}}>{fr?'Simulation pour test — paiement réel bientôt disponible':'Simulation for testing — real payment coming soon'}</Text>
+              <TouchableOpacity onPress={()=>setShowRechargeModal(false)} style={{padding:12,alignItems:'center'}}>
+                <Text style={{color:'#999',fontSize:14}}>{fr?'Fermer':'Close'}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -775,6 +874,16 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
             </View>
           </View>
         </Modal>
+
+        {/* Balance Card */}
+        <TouchableOpacity onPress={()=>setShowRechargeModal(true)} style={{marginHorizontal:16,marginTop:12,borderRadius:16,padding:16,backgroundColor: driverBalance===0?'#FFEBEE':driverBalance<1000?'#FFF8E1':'#E8F5E9',borderWidth:2,borderColor: driverBalance===0?'#EF9A9A':driverBalance<1000?'#FFE082':'#A5D6A7',flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
+          <View>
+            <Text style={{fontSize:12,fontWeight:'700',color: driverBalance===0?'#C62828':driverBalance<1000?'#F57F17':'#2E7D32'}}>{driverBalance===0?(fr?'⚠️ COMPTE SUSPENDU':'⚠️ ACCOUNT SUSPENDED'):driverBalance<1000?(fr?'⚠️ Solde faible':'⚠️ Low balance'):(fr?'💳 Solde KribiGo':'💳 KribiGo Balance')}</Text>
+            <Text style={{fontSize:24,fontWeight:'800',color:'#1a1a1a',marginTop:2}}>{driverBalance.toLocaleString()} XAF</Text>
+            <Text style={{fontSize:11,color:'#666',marginTop:2}}>{fr?'Touchez pour recharger':'Tap to recharge'}</Text>
+          </View>
+          <Text style={{fontSize:32}}>💳</Text>
+        </TouchableOpacity>
 
         {/* Stats */}
         <Text style={[s.sectionTitle, {marginTop: 20}]}>{fr ? 'Aujourd\'hui' : 'Today'}</Text>
@@ -982,7 +1091,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
           {/* Dev only: reset onboarding for testing */}
           <TouchableOpacity style={{marginTop:8,padding:10,alignItems:'center'}} onPress={async()=>{
             const SecureStore = require('expo-secure-store');
-            await SecureStore.deleteItemAsync('kribigo_driver_onboarding_complete');
+            await SecureStore.deleteItemAsync('kribigo_driver_onboarding_' + phone);
             Alert.alert('✅', 'Onboarding reset! Log out and back in to test.');
           }}>
             <Text style={{color:'rgba(255,255,255,0.3)',fontSize:11}}>🔧 Reset onboarding (dev)</Text>
@@ -1046,7 +1155,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
                   <Text style={{fontSize:15,fontWeight:'700',color:'#E53E3E'}}>-{commissionAmt.toLocaleString()} XAF</Text>
                 </View>
                 <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingVertical:8}}>
-                  <Text style={{fontSize:14,fontWeight:'700',color:'#1B6B4A'}}>{fr?'À reverser à KribiGo':'To remit to KribiGo'}</Text>
+                  <Text style={{fontSize:14,fontWeight:'700',color:'#1B6B4A'}}>{fr?'Déduit automatiquement':'Auto-deducted by KribiGo'}</Text>
                   <Text style={{fontSize:15,fontWeight:'800',color:'#1B6B4A'}}>{commissionAmt.toLocaleString()} XAF</Text>
                 </View>
               </View>
@@ -1183,10 +1292,10 @@ export default function App() {
       await persistLogin(token, phone, r, userId);
       setUserRole(r);
       if (r === 'driver') {
-        const done = await SecureStore.getItemAsync('kribigo_driver_onboarding_complete');
+        const done = await SecureStore.getItemAsync('kribigo_driver_onboarding_' + phone);
         setOnboardingComplete(done === 'true');
         // Test driver 699000001 is always pre-approved
-        const approved = await SecureStore.getItemAsync('kribigo_driver_approved');
+        const approved = await SecureStore.getItemAsync('kribigo_driver_approved_' + phone);
         setDriverApproved(phone === '699000001' || approved === 'true');
       } else {
         setOnboardingComplete(true);
@@ -1523,12 +1632,12 @@ export default function App() {
   if(screen==='role') return <RoleSelector phone={phone} lang={lang} onSelect={handleRoleSelect}/>;
 
   if(userRole==='driver') {
-    if (onboardingComplete === false) return <DriverOnboarding phone={phone} lang={lang} onComplete={async()=>{
-      await SecureStore.setItemAsync('kribigo_driver_onboarding_complete','true');
+    if (onboardingComplete === false) return <DriverOnboarding phone={phone} lang={lang} onBack={()=>{setUserRole(null); setScreen('role');}} onComplete={async()=>{
+      await SecureStore.setItemAsync('kribigo_driver_onboarding_' + phone,'true');
       setOnboardingComplete(true);
     }}/>;
     if (onboardingComplete === null) {
-      SecureStore.getItemAsync('kribigo_driver_onboarding_complete').then(done => {
+      SecureStore.getItemAsync('kribigo_driver_onboarding_' + phone).then(done => {
         setOnboardingComplete(done === 'true');
       });
       return <View style={[s.container,{justifyContent:'center',alignItems:'center'}]}><ActivityIndicator color="#fff"/></View>;
@@ -1849,7 +1958,13 @@ export default function App() {
           <Text style={s.homeSubGreeting}>{fr?'Où allez-vous ?':'Where to?'}</Text>
         </View>
         <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-          <TouchableOpacity onPress={()=>setUserRole('driver')} style={dr.switchBtn}>
+          <TouchableOpacity onPress={async()=>{
+              const done = await SecureStore.getItemAsync('kribigo_driver_onboarding_' + phone);
+              const approved = await SecureStore.getItemAsync('kribigo_driver_approved_' + phone);
+              setOnboardingComplete(done === 'true');
+              setDriverApproved(phone === '699000001' || approved === 'true');
+              setUserRole('driver');
+            }} style={dr.switchBtn}>
             <Text style={dr.switchBtnText}>{fr?'🚗 Chauffeur':'🚗 Driver'}</Text>
           </TouchableOpacity>
           <View style={[s.timeBadge,night&&s.timeBadgeNight]}>
