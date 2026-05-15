@@ -414,8 +414,9 @@ function DriverOnboarding({phone, lang, onComplete, onBack}) {
           <View>
             <Text style={{color:'rgba(255,255,255,0.7)',fontSize:13,marginBottom:20}}>{fr?'Prenez des photos claires de vos documents.':'Take clear photos of your documents.'}</Text>
             {[
-              {label:fr?'Photo recto de votre CNI *':'CNI front photo *', icon:'🪪', state:cniPhoto, setter:setCniPhoto},
-              {label:fr?'Photo de votre permis de conduire *':"Driver's license photo *", icon:'📄', state:licensePhoto, setter:setLicensePhoto},
+              {label:fr?'CNI — Recto *':'CNI — Front *', icon:'🪪', state:cniPhoto, setter:setCniPhoto},
+              {label:fr?'CNI — Verso *':'CNI — Back *', icon:'🪪', state:cniPhotoVerso, setter:setCniPhotoVerso},
+              {label:fr?'Permis de conduire *':"Driver's license *", icon:'📄', state:licensePhoto, setter:setLicensePhoto},
             ].map((doc,i)=>(
               <View key={i} style={{marginBottom:20}}>
                 <Text style={{color:'#fff',fontWeight:'700',marginBottom:8}}>{doc.label}</Text>
@@ -428,8 +429,8 @@ function DriverOnboarding({phone, lang, onComplete, onBack}) {
               <TouchableOpacity style={{flex:1,backgroundColor:'rgba(255,255,255,0.15)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>setStep(3)}>
                 <Text style={{color:'#fff',fontWeight:'700'}}>← {fr?'Retour':'Back'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{flex:2,backgroundColor: cniPhoto&&licensePhoto?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{if(!cniPhoto||!licensePhoto){Alert.alert(fr?'Documents requis':'Documents required',fr?'Veuillez ajouter tous les documents':'Please add all documents');return;}setStep(5);}}>
-                <Text style={{color: cniPhoto&&licensePhoto?'#1B6B4A':'rgba(255,255,255,0.5)',fontWeight:'800'}}>{fr?'Continuer':'Continue'} →</Text>
+              <TouchableOpacity style={{flex:2,backgroundColor: cniPhoto&&cniPhotoVerso&&licensePhoto?'#fff':'rgba(255,255,255,0.3)',borderRadius:16,padding:16,alignItems:'center'}} onPress={()=>{if(!cniPhoto||!cniPhotoVerso||!licensePhoto){Alert.alert(fr?'Documents requis':'Documents required',fr?'Veuillez ajouter tous les documents':'Please add all documents');return;}setStep(5);}}>
+                <Text style={{color: cniPhoto&&cniPhotoVerso&&licensePhoto?'#1B6B4A':'rgba(255,255,255,0.5)',fontWeight:'800'}}>{fr?'Continuer':'Continue'} →</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -522,12 +523,12 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
   // Load persisted driver profile
   React.useEffect(() => {
     (async () => {
-      const n = await SecureStore.getItemAsync('kribigo_driver_name');
-      const p = await SecureStore.getItemAsync('kribigo_driver_photo');
-      const v = await SecureStore.getItemAsync('kribigo_driver_vehicle');
+      const n = await SecureStore.getItemAsync('kribigo_driver_name_' + phone);
+      const p = await SecureStore.getItemAsync('kribigo_driver_photo_' + phone);
+      const v = await SecureStore.getItemAsync('kribigo_driver_vehicle_' + phone);
       const t = await SecureStore.getItemAsync('kribigo_driver_trips');
-      const pl = await SecureStore.getItemAsync('kribigo_driver_plate');
-      const id = await SecureStore.getItemAsync('kribigo_driver_id');
+      const pl = await SecureStore.getItemAsync('kribigo_driver_plate_' + phone);
+      const id = await SecureStore.getItemAsync('kribigo_driver_id_' + phone);
       if (n) setDriverName(n);
       if (p) setDriverPhoto(p);
       if (v) setDriverVehicle(v);
@@ -987,7 +988,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
               if(!result.canceled) {
                 const uri = result.assets[0].uri;
                 setDriverPhoto(uri);
-                await SecureStore.setItemAsync('kribigo_driver_photo', uri);
+                await SecureStore.setItemAsync('kribigo_driver_photo_' + phone, uri);
               }
             }}>
               {driverPhoto?(
@@ -1034,7 +1035,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
             {[{id:'moto',icon:'🏍️',label:'Moto'},{id:'economie',icon:'🚗',label:'Économie'},{id:'confort',icon:'🚙',label:'Confort'}].map(v=>(
               <TouchableOpacity key={v.id} onPress={()=>{
                 setDriverVehicle(v.id);
-                SecureStore.setItemAsync('kribigo_driver_vehicle', v.id);
+                SecureStore.setItemAsync('kribigo_driver_vehicle_' + phone, v.id);
               }} style={{flex:1,padding:10,borderRadius:12,alignItems:'center',borderWidth:2,borderColor:driverVehicle===v.id?'#1B6B4A':'#E0E0E0',backgroundColor:driverVehicle===v.id?'#E8F5EE':'#fff'}}>
                 <Text style={{fontSize:20}}>{v.icon}</Text>
                 <Text style={{fontSize:11,color:driverVehicle===v.id?'#1B6B4A':'#666',fontWeight:driverVehicle===v.id?'700':'400',marginTop:2}}>{v.label}</Text>
@@ -1065,10 +1066,10 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
             </View>
           ) : null}
           <TouchableOpacity style={{backgroundColor:'#1B6B4A',borderRadius:12,padding:14,alignItems:'center',marginTop:16}} onPress={async()=>{
-            await SecureStore.setItemAsync('kribigo_driver_name', driverName);
-            await SecureStore.setItemAsync('kribigo_driver_plate', driverPlate);
-            await SecureStore.setItemAsync('kribigo_driver_id', driverIdNumber);
-            await SecureStore.setItemAsync('kribigo_driver_vehicle', driverVehicle);
+            await SecureStore.setItemAsync('kribigo_driver_name_' + phone, driverName);
+            await SecureStore.setItemAsync('kribigo_driver_plate_' + phone, driverPlate);
+            await SecureStore.setItemAsync('kribigo_driver_id_' + phone, driverIdNumber);
+            await SecureStore.setItemAsync('kribigo_driver_vehicle_' + phone, driverVehicle);
             Alert.alert('✅', fr?'Profil sauvegardé !':'Profile saved!');
           }}>
             <Text style={{color:'#fff',fontWeight:'700',fontSize:15}}>{fr?'💾 Sauvegarder':'💾 Save profile'}</Text>
@@ -1278,7 +1279,7 @@ export default function App() {
         setUserRole(session.role);
         setToken(session.token);
         setUserId(session.userId);
-        if (session.riderName) setRiderName(session.riderName);
+        if (session.riderName) setRiderName(session.riderName.replace('_' + phone, ''));
 
         setScreen('home');
       } else {
@@ -1452,7 +1453,7 @@ export default function App() {
       setRiderPhoto(result.assets[0].uri);
       const { saveRiderName } = require('./src/services/storage');
       // Store photo URI in SecureStore
-      await SecureStore.setItemAsync('kribigo_rider_photo', result.assets[0].uri);
+      await SecureStore.setItemAsync('kribigo_rider_photo_' + phone, result.assets[0].uri);
     }
   };
 
@@ -1471,10 +1472,10 @@ export default function App() {
   // Load saved photo on startup
   useEffect(() => {
     const { getItemAsync } = require('expo-secure-store');
-    getItemAsync('kribigo_rider_photo').then(photo => {
+    getItemAsync('kribigo_rider_photo_' + phone).then(photo => {
       if (photo) setRiderPhoto(photo);
     });
-    getItemAsync('kribigo_rider_ride_count').then(count => {
+    getItemAsync('kribigo_rider_ride_count_' + phone).then(count => {
       if (count) {
         const n = parseInt(count);
         setRideCount(n);
@@ -2326,7 +2327,7 @@ export default function App() {
                       setRiderName(tempName);
                       setEditingProfile(false);
                       const { saveRiderName } = require('./src/services/storage');
-                      await saveRiderName(tempName);
+                      await saveRiderName(tempName + '_' + phone);
                     }} style={{backgroundColor:'#1B6B4A',borderRadius:10,paddingHorizontal:16,paddingVertical:8}}>
                       <Text style={{color:'#fff',fontWeight:'700'}}>{fr?'Enregistrer':'Save'}</Text>
                     </TouchableOpacity>
