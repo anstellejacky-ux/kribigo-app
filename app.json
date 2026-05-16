@@ -24,8 +24,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/kribigo-icon.png",
+        "backgroundColor": "#1B6B4A"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anstellejacky.kribigofresh",
