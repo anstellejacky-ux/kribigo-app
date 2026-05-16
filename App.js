@@ -475,6 +475,20 @@ function DriverOnboarding({phone, lang, onComplete, onBack}) {
                 const suffix = phone.slice(-4);
                 const myCode = 'KRIBI-' + initials + suffix;
                 await SecureStore.setItemAsync('kribigo_driver_referral_code', myCode);
+                try {
+                  await fetch('https://kribigo-backend.onrender.com/api/v1/drivers/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      phone, name,
+                      national_id: cni,
+                      vehicle_type: vehicle,
+                      vehicle_plate: plate,
+                      referral_code: myCode,
+                      referred_by: referralCode || null,
+                    })
+                  });
+                } catch(e) { console.log('Submit error:', e); }
                 setSubmitted(true);
               }}>
                 <Text style={{color:'#fff',fontWeight:'800'}}>{fr?'Soumettre ma candidature':'Submit application'}</Text>
