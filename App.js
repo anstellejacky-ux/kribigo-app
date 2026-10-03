@@ -514,6 +514,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
   const [enteredPin, setEnteredPin] = useState('');
   const [pinError, setPinError] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const insets = useSafeAreaInsets();
   const [driverTab, setDriverTab] = useState('home');
   const [driverName, setDriverName] = useState('');
   const [driverPhoto, setDriverPhoto] = useState(null);
@@ -1211,7 +1212,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
       })()}
 
       {/* Bottom Tab Bar */}
-      <View style={dr.tabBar}>
+        <View style={[dr.tabBar,{paddingBottom:10+insets.bottom}]}>
         <TouchableOpacity style={dr.tabItem} onPress={()=>setDriverTab('home')}>
           <Text style={[dr.tabIcon, driverTab==='home'&&dr.tabIconActive]}>🏠</Text>
           <Text style={[dr.tabLabel, driverTab==='home'&&dr.tabLabelActive]}>{fr?'Accueil':'Home'}</Text>
@@ -2694,11 +2695,11 @@ function AppInner() {
         <TouchableOpacity style={[s.bookBtn,!canBookScheduled&&s.bookBtnOff]} disabled={!canBookScheduled} onPress={()=>setShowConfirm(true)}>
           <Text style={s.bookBtnText}>{rideMode==='later'?(fr?`📅 Planifier • ${fare.toLocaleString()} XAF`:`📅 Schedule • ${fare.toLocaleString()} XAF`):(fr?`Commander • ${fare.toLocaleString()} XAF`:`Book • ${fare.toLocaleString()} XAF`)}</Text>
         </TouchableOpacity>
-        <View style={{height:80}}/>
+        <View style={{height:80+insets.bottom}}/>
       </ScrollView>
 
       {/* Bottom Tab Bar */}
-      <View style={tab.bar}>
+        <View style={[tab.bar,{paddingBottom:10+insets.bottom}]}>
         <TouchableOpacity style={tab.btn} onPress={() => setActiveTab('home')}>
           <Text style={[tab.icon, activeTab==='home' && tab.iconActive]}>🏠</Text>
           <Text style={[tab.label, activeTab==='home' && tab.labelActive]}>{fr ? 'Accueil' : 'Home'}</Text>
