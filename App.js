@@ -13,7 +13,7 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform,
   ActivityIndicator, Alert, ScrollView, Modal, Animated
 } from 'react-native';
-
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const API = 'https://kribigo-backend.onrender.com/api/v1';
 
@@ -1267,13 +1267,52 @@ function RoleSelector({phone, lang, onSelect}){
     </View>
   );
 }
-
+function PasswordField({ value, onChangeText, placeholder }) {
+  const [show, setShow] = useState(false);
+  const flat = StyleSheet.flatten(s.input) || {};
+  return (
+    <View style={{ marginTop: flat.marginTop || 0, marginBottom: flat.marginBottom || 0 }}>
+      <TextInput
+        style={[s.input, { marginTop: 0, marginBottom: 0, paddingRight: 50 }]}
+        placeholder={placeholder}
+        placeholderTextColor="#999"
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!show}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <TouchableOpacity
+        onPress={() => setShow(v => !v)}
+        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 50, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Text style={{ fontSize: 20 }}>{show ? '🙈' : '👁️'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 // ─── MAIN APP ──────────────────────────────────────────────
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppInner />
+    </SafeAreaProvider>
+  );
+}
+
+function AppInner() {
+  const insets = useSafeAreaInsets();
+  const safe = { paddingTop: insets.top, paddingBottom: insets.bottom };
   const [screen, setScreen] = useState('loading');
   const [savedPhone, setSavedPhone] = useState('');
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authCode, setAuthCode] = useState('');
+  const [authRole, setAuthRole] = useState('rider'); // 'rider' | 'driver'
+  const [authVehicleType, setAuthVehicleType] = useState('moto');
+  const [authPlate, setAuthPlate] = useState('');
   const [loading, setLoading] = useState(false);
   const [lang, setLang] = useState('fr');
   const [userRole, setUserRole] = useState(null);
@@ -1415,27 +1454,103 @@ export default function App() {
   const canBook = isCourse?stops.some(s=>s.trim()):destination.trim().length>0;
   const canBookScheduled = canBook&&(rideMode==='now'||(schedDate&&schedTime));
 
-  const requestOTP = async () => {
-    if (!phone){Alert.alert('Erreur','Entrez votre numéro');return;}
-    setLoading(true);
-    try {
-      const res = await fetch(`${API}/auth/user/request-otp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});
-      if(res.ok)setScreen('otp');
-      else Alert.alert('Erreur','Impossible d\'envoyer le code');
-    } catch {Alert.alert('Erreur','Serveur inaccessible');}
-    finally{setLoading(false);}
+    // ─── PASSWORD AUTH ───────────────────────────────────────
+  const RIDER_ROLE = 'rider'; // must match what RoleSelector passes to onSelect()
+
+  const postJSON = async (path, body) => {
+    const res = await fetch(`${API}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data };
   };
 
-  const verifyOTP = async () => {
-    if(!otp){Alert.alert('Erreur','Entrez le code');return;}
+  const authError = (msg) => Alert.alert(fr ? 'Erreur' : 'Error', msg);
+
+  const completeLogin = async (data, role) => {
+    const account = role === 'driver' ? data.driver : data.user;
+    setToken(data.access_token);
+    setUserId(account?.id);
+    await persistLogin(data.access_token, phone, role, account?.id);
+    setUserRole(role);
+    if (role === 'driver') {
+      await SecureStore.setItemAsync('kribigo_driver_onboarding_' + phone, 'true');
+      await SecureStore.setItemAsync('kribigo_driver_approved_' + phone, account?.is_verified ? 'true' : 'false');
+      setOnboardingComplete(true);
+      setDriverApproved(account?.is_verified === true);
+    } else {
+      setOnboardingComplete(true);
+    }
+    setAuthPassword('');
+    setScreen('home');
+  };
+
+  const doLogin = async () => {
+    if (phone.length !== 9) return authError(fr ? 'Entrez un numéro à 9 chiffres' : 'Enter a 9-digit number');
+    if (!authPassword) return authError(fr ? 'Entrez votre mot de passe' : 'Enter your password');
     setLoading(true);
     try {
-      const res = await fetch(`${API}/auth/user/verify-otp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,code:otp})});
-      const data = await res.json();
-      if(res.ok){ setToken(data.access_token); setUserId(data.user?.id); setScreen('role'); }
-      else Alert.alert('Erreur',data.error||'Code invalide');
-    } catch {Alert.alert('Erreur','Serveur inaccessible');}
-    finally{setLoading(false);}
+      const path = authRole === 'driver' ? '/auth/driver/login' : '/auth/user/login';
+      const { ok, data } = await postJSON(path, { phone: '+237' + phone, password: authPassword });
+      if (ok) await completeLogin(data, authRole === 'driver' ? 'driver' : RIDER_ROLE);
+      else authError(data.error || (fr ? 'Connexion impossible' : 'Login failed'));
+    } catch { authError(fr ? 'Serveur inaccessible' : 'Server unreachable'); }
+    finally { setLoading(false); }
+  };
+
+  const doRegister = async () => {
+    if (!authName.trim()) return authError(fr ? 'Entrez votre nom' : 'Enter your name');
+    if (phone.length !== 9) return authError(fr ? 'Entrez un numéro à 9 chiffres' : 'Enter a 9-digit number');
+    if (authPassword.length < 6) return authError(fr ? 'Mot de passe : 6 caractères minimum' : 'Password: at least 6 characters');
+    if (authRole === 'driver' && !authPlate.trim()) return authError(fr ? "Entrez la plaque d'immatriculation" : 'Enter the plate number');
+    setLoading(true);
+    try {
+      const base = { phone: '+237' + phone, name: authName.trim(), email: authEmail.trim() || undefined, password: authPassword };
+      if (authRole === 'driver') {
+        const { ok, data } = await postJSON('/drivers/register', { ...base, vehicle_type: authVehicleType, vehicle_plate: authPlate.trim() });
+        if (ok) {
+          Alert.alert(fr ? 'Demande envoyée' : 'Application sent', data.message || '');
+          setAuthPassword('');
+          setScreen('login');
+        } else authError(data.error || (fr ? 'Inscription impossible' : 'Registration failed'));
+      } else {
+        const { ok, data } = await postJSON('/auth/user/register', base);
+        if (ok) await completeLogin(data, RIDER_ROLE);
+        else authError(data.error || (fr ? 'Inscription impossible' : 'Registration failed'));
+      }
+    } catch { authError(fr ? 'Serveur inaccessible' : 'Server unreachable'); }
+    finally { setLoading(false); }
+  };
+
+  const doForgot = async () => {
+    if (!authEmail.trim()) return authError(fr ? 'Entrez votre email' : 'Enter your email');
+    setLoading(true);
+    try {
+      const path = authRole === 'driver' ? '/auth/driver/forgot-password' : '/auth/user/forgot-password';
+      const { ok } = await postJSON(path, { email: authEmail.trim() });
+      if (ok) setScreen('reset');
+      else authError(fr ? 'Impossible pour le moment' : 'Not possible right now');
+    } catch { authError(fr ? 'Serveur inaccessible' : 'Server unreachable'); }
+    finally { setLoading(false); }
+  };
+
+  const doReset = async () => {
+    if (!authEmail.trim() || authCode.length !== 6) return authError(fr ? 'Entrez votre email et le code à 6 chiffres' : 'Enter your email and the 6-digit code');
+    if (authPassword.length < 6) return authError(fr ? 'Mot de passe : 6 caractères minimum' : 'Password: at least 6 characters');
+    setLoading(true);
+    try {
+      const path = authRole === 'driver' ? '/auth/driver/reset-password' : '/auth/user/reset-password';
+      const { ok, data } = await postJSON(path, { email: authEmail.trim(), code: authCode, new_password: authPassword });
+      if (ok) {
+        Alert.alert(fr ? 'Mot de passe modifié' : 'Password changed', fr ? 'Vous pouvez vous connecter.' : 'You can now log in.');
+        setAuthCode('');
+        setAuthPassword('');
+        setScreen('login');
+      } else authError(data.error || (fr ? 'Code invalide ou expiré' : 'Invalid or expired code'));
+    } catch { authError(fr ? 'Serveur inaccessible' : 'Server unreachable'); }
+    finally { setLoading(false); }
   };
 
   const submitRating = async () => {
@@ -1635,41 +1750,110 @@ export default function App() {
     </View>
   );
 
+    const roleSwitch = (
+    <View style={{flexDirection:'row',marginBottom:14}}>
+      {[['rider',fr?'Passager':'Rider'],['driver',fr?'Chauffeur':'Driver']].map(([r,label])=>(
+        <TouchableOpacity key={r} style={[s.btn,{flex:1,marginTop:0,marginHorizontal:4},authRole!==r&&{backgroundColor:'#E5E7EB'}]} onPress={()=>setAuthRole(r)}>
+          <Text style={[s.btnText,authRole!==r&&{color:'#555'}]}>{label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   if(screen==='login') return(
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS==='ios'?'padding':'height'}>
+    <KeyboardAvoidingView style={[s.container,safe]} behavior={Platform.OS==='ios'?'padding':'height'}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <LangToggle/>
         <View style={s.logoArea}><Text style={s.logo}>Kribi<Text style={s.logoOrange}>Go</Text></Text><Text style={s.flag}>🇨🇲</Text></View>
         <View style={s.card}>
-          <Text style={s.cardTitle}>{fr?'Bienvenue':'Welcome'}</Text>
-          <Text style={s.cardSub}>{fr?'Entrez votre numéro pour continuer':'Enter your number to continue'}</Text>
+          <Text style={s.cardTitle}>{fr?'Connexion':'Log in'}</Text>
+          {roleSwitch}
           <View style={s.phoneRow}>
             <View style={s.prefix}><Text style={s.prefixText}>🇨🇲 +237</Text></View>
-            <TextInput style={s.phoneInput} placeholder={fr?'Numéro de téléphone':'Phone number'} placeholderTextColor="#999" value={phone} onChangeText={setPhone} keyboardType="phone-pad" maxLength={9}/>
+            <TextInput style={s.phoneInput} placeholder={fr?'Téléphone':'Phone'} placeholderTextColor="#999" value={phone} onChangeText={t=>setPhone(t.replace(/\D/g,''))} keyboardType="phone-pad" maxLength={9}/>
           </View>
-          <TouchableOpacity style={[s.btn,loading&&s.btnOff]} onPress={requestOTP} disabled={loading}>
-            {loading?<ActivityIndicator color="#fff"/>:<Text style={s.btnText}>{fr?'Recevoir le code':'Get code'}</Text>}
+          <PasswordField value={authPassword} onChangeText={setAuthPassword} placeholder={fr?'Mot de passe':'Password'}/>
+          <TouchableOpacity style={[s.btn,loading&&s.btnOff]} onPress={doLogin} disabled={loading}>
+            {loading?<ActivityIndicator color="#fff"/>:<Text style={s.btnText}>{fr?'Se connecter':'Log in'}</Text>}
           </TouchableOpacity>
+          <TouchableOpacity onPress={()=>setScreen('forgot')} style={s.changeBtn}><Text style={s.changeText}>{fr?'Mot de passe oublié ?':'Forgot password?'}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={()=>setScreen('register')} style={s.changeBtn}><Text style={s.changeText}>{fr?'Créer un compte':'Create an account'}</Text></TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 
-  if(screen==='otp') return(
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS==='ios'?'padding':'height'}>
+  if(screen==='register') return(
+    <KeyboardAvoidingView style={[s.container,safe]} behavior={Platform.OS==='ios'?'padding':'height'}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <LangToggle/>
         <View style={s.logoArea}><Text style={s.logo}>Kribi<Text style={s.logoOrange}>Go</Text></Text><Text style={s.flag}>🇨🇲</Text></View>
         <View style={s.card}>
-          <Text style={s.cardTitle}>{fr?'Code de vérification':'Verification code'}</Text>
-          <Text style={s.cardSub}>{fr?`Code envoyé au +237 ${phone}`:`Code sent to +237 ${phone}`}</Text>
-          <TextInput style={[s.input,s.otpInput]} placeholder="· · · · · ·" placeholderTextColor="#ccc" value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={6}/>
-          <TouchableOpacity style={[s.btn,loading&&s.btnOff]} onPress={verifyOTP} disabled={loading}>
-            {loading?<ActivityIndicator color="#fff"/>:<Text style={s.btnText}>{fr?'Vérifier':'Verify'}</Text>}
+          <Text style={s.cardTitle}>{fr?'Créer un compte':'Create account'}</Text>
+          {roleSwitch}
+          <TextInput style={s.input} placeholder={fr?'Nom complet':'Full name'} placeholderTextColor="#999" value={authName} onChangeText={setAuthName}/>
+          <View style={s.phoneRow}>
+            <View style={s.prefix}><Text style={s.prefixText}>🇨🇲 +237</Text></View>
+            <TextInput style={s.phoneInput} placeholder={fr?'Téléphone':'Phone'} placeholderTextColor="#999" value={phone} onChangeText={t=>setPhone(t.replace(/\D/g,''))} keyboardType="phone-pad" maxLength={9}/>
+          </View>
+          <TextInput style={s.input} placeholder={fr?'Email (facultatif)':'Email (optional)'} placeholderTextColor="#999" value={authEmail} onChangeText={setAuthEmail} keyboardType="email-address" autoCapitalize="none"/>
+          <Text style={s.cardSub}>{fr?'Sans email, il faudra contacter KribiGo pour réinitialiser votre mot de passe.':'Without an email, you will need to contact KribiGo to reset your password.'}</Text>
+          <PasswordField value={authPassword} onChangeText={setAuthPassword} placeholder={fr?'Mot de passe (6 caractères min.)':'Password (min. 6 characters)'}/>
+          {authRole==='driver' && (
+            <>
+              <View style={{flexDirection:'row',marginBottom:10}}>
+                {[['moto','Moto',fr?'Deux-roues':'Two-wheeler'],['economie',fr?'Économie':'Economy',fr?'Sans climatisation':'No AC'],['confort','Confort',fr?'Avec climatisation':'With AC']].map(([v,label,sub])=>(
+  <TouchableOpacity key={v} style={[s.btn,{flex:1,marginTop:0,marginHorizontal:3,paddingHorizontal:4},authVehicleType!==v&&{backgroundColor:'#E5E7EB'}]} onPress={()=>setAuthVehicleType(v)}>
+    <Text style={[s.btnText,{fontSize:13},authVehicleType!==v&&{color:'#555'}]}>{label}</Text>
+    <Text style={[{fontSize:10,textAlign:'center',color:'#fff'},authVehicleType!==v&&{color:'#777'}]}>{sub}</Text>
+  </TouchableOpacity>
+))}
+              </View>
+              <TextInput style={s.input} placeholder={fr?"Plaque d'immatriculation":'Plate number'} placeholderTextColor="#999" value={authPlate} onChangeText={setAuthPlate} autoCapitalize="characters"/>
+            </>
+          )}
+          <TouchableOpacity style={[s.btn,loading&&s.btnOff]} onPress={doRegister} disabled={loading}>
+            {loading?<ActivityIndicator color="#fff"/>:<Text style={s.btnText}>{fr?'Créer mon compte':'Create my account'}</Text>}
           </TouchableOpacity>
-          <TouchableOpacity onPress={()=>{setScreen('login');setOtp('');}} style={s.changeBtn}>
-            <Text style={s.changeText}>{fr?'Changer de numéro':'Change number'}</Text>
+          <TouchableOpacity onPress={()=>setScreen('login')} style={s.changeBtn}><Text style={s.changeText}>{fr?'J’ai déjà un compte':'I already have an account'}</Text></TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+
+  if(screen==='forgot') return(
+    <KeyboardAvoidingView style={[s.container,safe]} behavior={Platform.OS==='ios'?'padding':'height'}>
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+        <LangToggle/>
+        <View style={s.logoArea}><Text style={s.logo}>Kribi<Text style={s.logoOrange}>Go</Text></Text><Text style={s.flag}>🇨🇲</Text></View>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>{fr?'Mot de passe oublié':'Forgot password'}</Text>
+          {roleSwitch}
+          <Text style={s.cardSub}>{fr?'Entrez l’email de votre compte. Si vous n’avez pas d’email, contactez KribiGo.':'Enter your account email. If you have no email, contact KribiGo.'}</Text>
+          <TextInput style={s.input} placeholder="Email" placeholderTextColor="#999" value={authEmail} onChangeText={setAuthEmail} keyboardType="email-address" autoCapitalize="none"/>
+          <TouchableOpacity style={[s.btn,loading&&s.btnOff]} onPress={doForgot} disabled={loading}>
+            {loading?<ActivityIndicator color="#fff"/>:<Text style={s.btnText}>{fr?'Envoyer le code':'Send code'}</Text>}
           </TouchableOpacity>
+          <TouchableOpacity onPress={()=>setScreen('login')} style={s.changeBtn}><Text style={s.changeText}>{fr?'Retour':'Back'}</Text></TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+
+  if(screen==='reset') return(
+    <KeyboardAvoidingView style={[s.container,safe]} behavior={Platform.OS==='ios'?'padding':'height'}>
+      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+        <LangToggle/>
+        <View style={s.logoArea}><Text style={s.logo}>Kribi<Text style={s.logoOrange}>Go</Text></Text><Text style={s.flag}>🇨🇲</Text></View>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>{fr?'Nouveau mot de passe':'New password'}</Text>
+          <Text style={s.cardSub}>{fr?'Si cet email existe, un code à 6 chiffres vient d’être envoyé.':'If this email exists, a 6-digit code was just sent.'}</Text>
+          <TextInput style={[s.input,s.otpInput]} placeholder="· · · · · ·" placeholderTextColor="#ccc" value={authCode} onChangeText={setAuthCode} keyboardType="number-pad" maxLength={6}/>
+          <PasswordField value={authPassword} onChangeText={setAuthPassword} placeholder={fr?'Nouveau mot de passe (6 caractères min.)':'New password (min. 6 characters)'}/>
+          <TouchableOpacity style={[s.btn,loading&&s.btnOff]} onPress={doReset} disabled={loading}>
+            {loading?<ActivityIndicator color="#fff"/>:<Text style={s.btnText}>{fr?'Changer le mot de passe':'Change password'}</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={()=>setScreen('login')} style={s.changeBtn}><Text style={s.changeText}>{fr?'Retour':'Back'}</Text></TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
