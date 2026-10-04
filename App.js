@@ -16,7 +16,8 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const API = 'https://kribigo-backend.onrender.com/api/v1';
-
+const KRIBIGO_MOMO_NUMBER = '+237 6XX XXX XXX'; // MTN MoMo
+const KRIBIGO_OM_NUMBER = '+237 6XX XXX XXX';   // Orange Money
 function getTier(totalTrips) {
   if (totalTrips >= 500) return {name:'Diamond', nameFr:'Diamant', icon:'💎', commission:8,  next:null,       nextTrips:0};
   if (totalTrips >= 200) return {name:'Gold',    nameFr:'Or',      icon:'🥇', commission:10, next:'Diamond', nextTrips:500};
@@ -502,7 +503,7 @@ function DriverOnboarding({phone, lang, onComplete, onBack}) {
 }
 
 // ─── DRIVER HOME SCREEN ────────────────────────────────────
-function DriverHome({phone, lang, onSwitchRole, onLogout}){
+function DriverHome({phone, token, lang, onSwitchRole, onLogout}){
   const fr = lang === 'fr';
   const [isOnline, setIsOnline] = useState(false);
   const [hasRequest, setHasRequest] = useState(false);
@@ -812,7 +813,7 @@ function DriverHome({phone, lang, onSwitchRole, onLogout}){
                 <Text style={{fontSize:14,fontWeight:'700',color:'#1B6B4A',marginBottom:12}}>{fr?'Instructions':'Instructions'}</Text>
                 {[
                   {icon:'1️⃣', text: fr?'Ouvrez MTN MoMo ou Orange Money':'Open MTN MoMo or Orange Money'},
-                  {icon:'2️⃣', text: fr?'Envoyez le montant au +237 6XX XXX XXX':'Send amount to +237 6XX XXX XXX'},
+                  {icon:'2️⃣', text: (fr?'Envoyez le montant à : ':'Send the amount to: ') + 'MTN MoMo ' + KRIBIGO_MOMO_NUMBER + ' / Orange Money ' + KRIBIGO_OM_NUMBER},
                   {icon:'3️⃣', text: fr?'Motif: votre numéro de téléphone':'Reference: your phone number'},
                   {icon:'4️⃣', text: fr?'Minimum: 5,000 XAF':'Minimum: 5,000 XAF'},
                 ].map((item,i)=>(
@@ -1915,7 +1916,7 @@ function AppInner() {
         </View>
       );
     }
-    return <DriverHome phone={phone} lang={lang} onSwitchRole={()=>setUserRole('rider')} onLogout={handleLogout}/>;
+            return <DriverHome phone={phone} token={token} lang={lang} onSwitchRole={()=>setUserRole('rider')} onLogout={handleLogout}/>;
   }
 
   if(showSuccess&&bookedRide) return(
